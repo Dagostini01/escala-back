@@ -4,6 +4,7 @@ import registerImport from "./routes/import";
 import registerHealth from "./routes/health";
 import registerValidation from "./routes/validation";
 import registerAuth from "./routes/auth";
+import { registerCors } from "./server/plugins/cors";
 import { registerContentParsers } from "./server/plugins/contentParsers";
 import { registerOpenApi, registerOpenApiUi } from "./server/plugins/swagger";
 
@@ -12,6 +13,7 @@ dotenv.config();
 async function main() {
   const app = Fastify();
 
+  await registerCors(app);
   await registerOpenApi(app);
   registerContentParsers(app);
   registerImport(app);
