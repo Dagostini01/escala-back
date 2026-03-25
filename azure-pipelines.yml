@@ -1,0 +1,95 @@
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+variables:
+  vmImageName: "ubuntu-latest"
+  dockerfilePath: "$(Build.SourcesDirectory)/Dockerfile"
+  imageRepository: "pedrodagostini/escalaback"
+  tag: "latest"
+  azureSubscription: "DatasiteEscalaAPI"
+  dockerRegistryServiceConnection: "DockerHubConnection"
+  webAppName: "DatasiteEscalaAPI"
+  resourceGroupName: "DatasiteAPs"
+  publicApiUrl: "https://datasiteescalaapi-bjhmevguhtfadxhn.brazilsouth-01.azurewebsites.net"
+
+stages:
+  - stage: Build
+    displayName: Build and push image
+    jobs:
+      - job: Docker
+        displayName: Build image
+        pool:
+          vmImage: $(vmImageName)
+        steps:
+          - task: Docker@2
+            displayName: Build and push image to Docker Hub
+            inputs:
+              command: buildAndPush
+              repository: $(imageRepository)
+              dockerfile: $(dockerfilePath)
+              containerRegistry: $(dockerRegistryServiceConnection)
+              tags: |
+                $(tag)
+
+  - stage: Deploy
+    displayName: Deploy to production
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: DeployProduction
+        displayName: Deploy container on Azure Web App
+        environment: production
+        pool:
+          vmImage: $(vmImageName)
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - task: AzureCLI@2
+                  displayName: Configure application settings
+                  inputs:
+                    azureSubscription: $(azureSubscription)
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az webapp config set \
+                        --resource-group "$(resourceGroupName)" \
+                        --name "$(webAppName)" \
+                        --generic-configurations '{"healthCheckPath":"/health"}'
+
+                      az webapp config appsettings set \
+                        --resource-group "$(resourceGroupName)" \
+                        --name "$(webAppName)" \
+                        --settings \
+                          WEBSITES_PORT=3000 \
+                          PORT=3000 \
+                          HOST=0.0.0.0 \
+                          NODE_ENV=production \
+                          PUBLIC_API_URL="$(publicApiUrl)" \
+                          SQL_USER="$(SQL_USER)" \
+                          SQL_PASSWORD="$(SQL_PASSWORD)" \
+                          SQL_SERVER="$(SQL_SERVER)" \
+                          SQL_DATABASE="$(SQL_DATABASE)" \
+                          SQL_PORT="$(SQL_PORT)" \
+                          SQL_ENCRYPT="$(SQL_ENCRYPT)" \
+                          SQL_TRUST_SERVER_CERTIFICATE="$(SQL_TRUST_SERVER_CERTIFICATE)" \
+                          SQL_CONNECTION_TIMEOUT_MS="$(SQL_CONNECTION_TIMEOUT_MS)" \
+                          SQL_REQUEST_TIMEOUT_MS="$(SQL_REQUEST_TIMEOUT_MS)" \
+                          SQL_POOL_MAX="$(SQL_POOL_MAX)" \
+                          SQL_POOL_MIN="$(SQL_POOL_MIN)" \
+                          SQL_POOL_IDLE_MS="$(SQL_POOL_IDLE_MS)" \
+                          AUTH_SESSAO_DIAS="$(AUTH_SESSAO_DIAS)"
+
+                - task: AzureWebAppContainer@1
+                  displayName: Deploy image on Azure Web App
+                  inputs:
+                    azureSubscription: $(azureSubscription)
+                    appName: $(webAppName)
+                    containers: "$(imageRepository):$(tag)"
