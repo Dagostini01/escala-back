@@ -1,8 +1,9 @@
 import type { FastifyInstance } from "fastify";
+import { importPostSchema } from "../../schemas/routes";
 import { importExcel } from "../../services/importService";
 
 export default async function registerImport(app: FastifyInstance) {
-  app.post("/import", async (req, reply) => {
+  app.post("/import", { schema: importPostSchema }, async (req, reply) => {
     if (!(req.body instanceof Buffer)) {
       reply.code(415);
       return { message: "Content-Type inválido. Envie .xlsx em modo binário", details: { expected: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" } };

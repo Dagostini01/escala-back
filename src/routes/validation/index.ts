@@ -1,9 +1,10 @@
 import type { FastifyInstance } from "fastify";
 import { validateEscala } from "../../services/validationService";
 import { randomUUID } from "crypto";
+import { validatePostSchema } from "../../schemas/routes";
 
 export default async function registerValidation(app: FastifyInstance) {
-  app.post("/validate", async (req, reply) => {
+  app.post("/validate", { schema: validatePostSchema }, async (req, reply) => {
     try {
       const body = (typeof req.body === "object" && req.body) ? (req.body as any) : {};
       const p = Number(body.page) > 0 ? Number(body.page) : 1;
