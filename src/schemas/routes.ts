@@ -256,3 +256,218 @@ export const validatePostSchema: FastifySchema = {
     500: { ...falhaInterna }
   }
 };
+
+const equipe = {
+  type: "object",
+  properties: {
+    equipe_id: { type: "string", format: "uuid" },
+    coordenador_id: { type: "integer" },
+    coordenador_nome: { type: "string" },
+    equipe_qtde_inventariantes: { type: "integer", minimum: 0 }
+  },
+  required: ["equipe_id", "coordenador_id", "coordenador_nome", "equipe_qtde_inventariantes"]
+} as const;
+
+const equipeBody = {
+  type: "object",
+  required: ["coordenador_id", "coordenador_nome", "equipe_qtde_inventariantes"],
+  properties: {
+    coordenador_id: { type: "integer", minimum: 1 },
+    coordenador_nome: { type: "string", minLength: 1, maxLength: 500 },
+    equipe_qtde_inventariantes: { type: "integer", minimum: 0 }
+  }
+} as const;
+
+const equipeParams = {
+  type: "object",
+  required: ["equipe_id"],
+  properties: {
+    equipe_id: { type: "string", minLength: 1, maxLength: 40 }
+  }
+} as const;
+
+export const equipeGetSchema: FastifySchema = {
+  tags: ["equipes"],
+  summary: "Listar equipes",
+  response: {
+    200: {
+      type: "object",
+      properties: { rows: { type: "array", items: equipe } },
+      required: ["rows"]
+    },
+    500: { ...falhaInterna }
+  }
+};
+
+export const equipeGetByIdSchema: FastifySchema = {
+  tags: ["equipes"],
+  summary: "Buscar equipe",
+  params: equipeParams,
+  response: {
+    200: {
+      type: "object",
+      properties: { equipe },
+      required: ["equipe"]
+    },
+    400: { ...erroSimples },
+    404: { ...erroSimples },
+    500: { ...falhaInterna }
+  }
+};
+
+export const equipePostSchema: FastifySchema = {
+  tags: ["equipes"],
+  summary: "Criar equipe",
+  body: equipeBody,
+  response: {
+    201: {
+      type: "object",
+      properties: { equipe },
+      required: ["equipe"]
+    },
+    400: { ...erroSimples },
+    500: { ...falhaInterna }
+  }
+};
+
+export const equipePutSchema: FastifySchema = {
+  tags: ["equipes"],
+  summary: "Atualizar equipe",
+  params: equipeParams,
+  body: equipeBody,
+  response: {
+    200: {
+      type: "object",
+      properties: { equipe },
+      required: ["equipe"]
+    },
+    400: { ...erroSimples },
+    404: { ...erroSimples },
+    500: { ...falhaInterna }
+  }
+};
+
+export const equipeDeleteSchema: FastifySchema = {
+  tags: ["equipes"],
+  summary: "Remover equipe",
+  params: equipeParams,
+  response: {
+    204: {
+      type: "null",
+      description: "Equipe removida"
+    },
+    400: { ...erroSimples },
+    404: { ...erroSimples },
+    500: { ...falhaInterna }
+  }
+};
+
+const equipePessoa = {
+  type: "object",
+  properties: {
+    equipe_pessoa_id: { type: "integer" },
+    equipe_id: { type: "string" },
+    funcionario_id: { type: "integer" }
+  },
+  required: ["equipe_pessoa_id", "equipe_id", "funcionario_id"]
+} as const;
+
+const equipePessoaBody = {
+  type: "object",
+  required: ["equipe_id", "funcionario_id"],
+  properties: {
+    equipe_id: { type: "string", minLength: 1, maxLength: 40 },
+    funcionario_id: { type: "integer", minimum: 1 }
+  }
+} as const;
+
+const equipePessoaParams = {
+  type: "object",
+  required: ["equipe_pessoa_id"],
+  properties: {
+    equipe_pessoa_id: { type: "integer", minimum: 1 }
+  }
+} as const;
+
+export const equipePessoaGetSchema: FastifySchema = {
+  tags: ["equipe-pessoas"],
+  summary: "Listar pessoas de equipe",
+  querystring: {
+    type: "object",
+    properties: {
+      equipe_id: { type: "string", minLength: 1, maxLength: 40 }
+    }
+  },
+  response: {
+    200: {
+      type: "object",
+      properties: { rows: { type: "array", items: equipePessoa } },
+      required: ["rows"]
+    },
+    400: { ...erroSimples },
+    500: { ...falhaInterna }
+  }
+};
+
+export const equipePessoaGetByIdSchema: FastifySchema = {
+  tags: ["equipe-pessoas"],
+  summary: "Buscar pessoa de equipe",
+  params: equipePessoaParams,
+  response: {
+    200: {
+      type: "object",
+      properties: { pessoa: equipePessoa },
+      required: ["pessoa"]
+    },
+    400: { ...erroSimples },
+    404: { ...erroSimples },
+    500: { ...falhaInterna }
+  }
+};
+
+export const equipePessoaPostSchema: FastifySchema = {
+  tags: ["equipe-pessoas"],
+  summary: "Criar pessoa de equipe",
+  body: equipePessoaBody,
+  response: {
+    201: {
+      type: "object",
+      properties: { pessoa: equipePessoa },
+      required: ["pessoa"]
+    },
+    400: { ...erroSimples },
+    500: { ...falhaInterna }
+  }
+};
+
+export const equipePessoaPutSchema: FastifySchema = {
+  tags: ["equipe-pessoas"],
+  summary: "Atualizar pessoa de equipe",
+  params: equipePessoaParams,
+  body: equipePessoaBody,
+  response: {
+    200: {
+      type: "object",
+      properties: { pessoa: equipePessoa },
+      required: ["pessoa"]
+    },
+    400: { ...erroSimples },
+    404: { ...erroSimples },
+    500: { ...falhaInterna }
+  }
+};
+
+export const equipePessoaDeleteSchema: FastifySchema = {
+  tags: ["equipe-pessoas"],
+  summary: "Remover pessoa de equipe",
+  params: equipePessoaParams,
+  response: {
+    204: {
+      type: "null",
+      description: "Pessoa removida da equipe"
+    },
+    400: { ...erroSimples },
+    404: { ...erroSimples },
+    500: { ...falhaInterna }
+  }
+};

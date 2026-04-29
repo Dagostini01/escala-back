@@ -4,6 +4,8 @@ import registerImport from "./routes/import";
 import registerHealth from "./routes/health";
 import registerValidation from "./routes/validation";
 import registerAuth from "./routes/auth";
+import registerEquipes from "./routes/equipes";
+import registerEquipePessoas from "./routes/equipe-pessoas";
 import { registerCors } from "./server/plugins/cors";
 import { registerContentParsers } from "./server/plugins/contentParsers";
 import { registerOpenApi, registerOpenApiUi } from "./server/plugins/swagger";
@@ -20,6 +22,8 @@ async function main() {
   registerHealth(app);
   registerValidation(app);
   registerAuth(app);
+  registerEquipes(app);
+  registerEquipePessoas(app);
   await registerOpenApiUi(app);
 
   const port = Number(process.env.PORT ?? 3000);

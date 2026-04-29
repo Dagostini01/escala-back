@@ -16,7 +16,7 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
       info: {
         title: "escala-back",
         description:
-          "API de importação de escala (XLSX), validação e autenticação por e-mail/senha com sessão Bearer.",
+          "API de importação de escala (XLSX), validação, autenticação por e-mail/senha com sessão Bearer e gestão de equipes.",
         version: "0.1.0"
       },
       servers: [{ url: defaultServerUrl(), description: "Servidor" }],
@@ -24,7 +24,9 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
         { name: "health", description: "Saúde e diagnóstico" },
         { name: "auth", description: "Cadastro, login e sessão" },
         { name: "import", description: "Importação de planilhas" },
-        { name: "validation", description: "Validação de escala" }
+        { name: "validation", description: "Validação de escala" },
+        { name: "equipes", description: "CRUD de equipes" },
+        { name: "equipe-pessoas", description: "CRUD de pessoas vinculadas às equipes" }
       ],
       components: {
         securitySchemes: {
