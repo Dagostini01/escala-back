@@ -365,7 +365,10 @@ export const equipeDeleteSchema: FastifySchema = {
 const equipePessoa = {
   type: "object",
   properties: {
-    equipe_pessoa_id: { type: "integer" },
+    equipe_pessoa_id: {
+      type: "integer",
+      description: "Gerado automaticamente pela API no POST usando o maior ID existente + 1."
+    },
     equipe_id: { type: "string" },
     funcionario_id: { type: "integer" }
   },
@@ -428,6 +431,8 @@ export const equipePessoaGetByIdSchema: FastifySchema = {
 export const equipePessoaPostSchema: FastifySchema = {
   tags: ["equipe-pessoas"],
   summary: "Criar pessoa de equipe",
+  description:
+    "Cria vínculo entre equipe e funcionário. O campo `equipe_pessoa_id` não deve ser enviado; a API calcula automaticamente `MAX(equipe_pessoa_id) + 1` no banco.",
   body: equipePessoaBody,
   response: {
     201: {

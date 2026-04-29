@@ -46,18 +46,28 @@ export async function findEquipePessoaById(equipePessoaId: number): Promise<Equi
 
 export async function insertEquipePessoa(input: EquipePessoaInput): Promise<EquipePessoaRow> {
   const pool = await getPool();
-  const r = await pool
-    .request()
-    .input("equipe_id", sql.VarChar(40), input.equipe_id)
-    .input("funcionario_id", sql.Int, input.funcionario_id)
-    .query<EquipePessoaRow>(
-      "INSERT INTO dbo.ESCALA_equipe_pessoas (equipe_id, funcionario_id) " +
-        "OUTPUT inserted.equipe_pessoa_id, inserted.equipe_id, inserted.funcionario_id " +
-        "VALUES (@equipe_id, @funcionario_id)"
-    );
-  const row = r.recordset[0];
-  if (!row) throw new Error("EQUIPE_PESSOA_NAO_CRIADA");
-  return row;
+  const tx = new sql.Transaction(pool);
+  await tx.begin(sql.ISOLATION_LEVEL.SERIALIZABLE);
+  try {
+    const r = await new sql.Request(tx)
+      .input("equipe_id", sql.VarChar(40), input.equipe_id)
+      .input("funcionario_id", sql.Int, input.funcionario_id)
+      .query<EquipePessoaRow>(
+        "DECLARE @equipe_pessoa_id int; " +
+          "SELECT @equipe_pessoa_id = ISNULL(MAX(equipe_pessoa_id), 0) + 1 " +
+          "FROM dbo.ESCALA_equipe_pessoas WITH (UPDLOCK, HOLDLOCK); " +
+          "INSERT INTO dbo.ESCALA_equipe_pessoas (equipe_pessoa_id, equipe_id, funcionario_id) " +
+          "OUTPUT inserted.equipe_pessoa_id, inserted.equipe_id, inserted.funcionario_id " +
+          "VALUES (@equipe_pessoa_id, @equipe_id, @funcionario_id)"
+      );
+    const row = r.recordset[0];
+    if (!row) throw new Error("EQUIPE_PESSOA_NAO_CRIADA");
+    await tx.commit();
+    return row;
+  } catch (e) {
+    await tx.rollback();
+    throw e;
+  }
 }
 
 export async function updateEquipePessoa(
