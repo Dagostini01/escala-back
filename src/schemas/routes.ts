@@ -224,6 +224,25 @@ const linhaValidadaFix = {
   ]
 };
 
+export const limparCargaPostSchema: FastifySchema = {
+  tags: ["validation"],
+  summary: "Limpar tabela de carga da escala",
+  description:
+    "Executa `dbo.sp_ESCALA_LimpaCarga`, que limpa a tabela de dados usada na tela de carregamento de escala. Body opcional `{}`.",
+  body: {
+    type: "object",
+    additionalProperties: true
+  },
+  response: {
+    200: {
+      type: "object",
+      properties: { ok: { type: "boolean", enum: [true] } },
+      required: ["ok"]
+    },
+    500: { ...falhaInterna }
+  }
+};
+
 export const validatePostSchema: FastifySchema = {
   tags: ["validation"],
   summary: "Validar escala (paginado no JSON de resposta)",

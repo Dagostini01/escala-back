@@ -3,6 +3,7 @@ import dotenv from "dotenv";
 import registerImport from "./routes/import";
 import registerHealth from "./routes/health";
 import registerValidation from "./routes/validation";
+import registerLimparCarga from "./routes/limpar-carga";
 import registerAuth from "./routes/auth";
 import registerEquipes from "./routes/equipes";
 import registerEquipePessoas from "./routes/equipe-pessoas";
@@ -21,6 +22,7 @@ async function main() {
   registerImport(app);
   registerHealth(app);
   registerValidation(app);
+  registerLimparCarga(app);
   registerAuth(app);
   registerEquipes(app);
   registerEquipePessoas(app);
