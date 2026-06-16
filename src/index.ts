@@ -7,6 +7,7 @@ import registerLimparCarga from "./routes/limpar-carga";
 import registerAuth from "./routes/auth";
 import registerEquipes from "./routes/equipes";
 import registerEquipePessoas from "./routes/equipe-pessoas";
+import registerCatalogo from "./routes/catalogo";
 import { registerCors } from "./server/plugins/cors";
 import { registerContentParsers } from "./server/plugins/contentParsers";
 import { registerOpenApi, registerOpenApiUi } from "./server/plugins/swagger";
@@ -26,6 +27,7 @@ async function main() {
   registerAuth(app);
   registerEquipes(app);
   registerEquipePessoas(app);
+  registerCatalogo(app);
   await registerOpenApiUi(app);
 
   const port = Number(process.env.PORT ?? 3000);

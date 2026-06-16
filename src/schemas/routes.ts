@@ -495,3 +495,59 @@ export const equipePessoaDeleteSchema: FastifySchema = {
     500: { ...falhaInterna }
   }
 };
+
+const baseOperacional = {
+  type: "object",
+  properties: {
+    id_filial: { type: "integer", minimum: 1 },
+    nome: { type: "string", minLength: 1 }
+  },
+  required: ["id_filial", "nome"]
+} as const;
+
+const funcionarioPorCargo = {
+  type: "object",
+  properties: {
+    id_funcionario: { type: "integer", minimum: 1 },
+    nome: { type: "string", minLength: 1 }
+  },
+  required: ["id_funcionario", "nome"]
+} as const;
+
+export const basesOperacionaisGetSchema: FastifySchema = {
+  tags: ["catalogo"],
+  summary: "Listar bases operacionais",
+  description: "Executa `dbo.sp_CADASTRO_ConsultaBases` (tabela `t2_filiais`).",
+  response: {
+    200: {
+      type: "object",
+      properties: { rows: { type: "array", items: baseOperacional } },
+      required: ["rows"]
+    },
+    500: { ...falhaInterna }
+  }
+};
+
+export const funcionariosPorCargoGetSchema: FastifySchema = {
+  tags: ["catalogo"],
+  summary: "Buscar funcionários por cargo e filial",
+  description:
+    "Executa `dbo.sp_ESCALA_BuscaFuncionariosPorCargo`. O front usa `id_cargo=1` (coordenador) e `id_cargo=13` (inventariante).",
+  querystring: {
+    type: "object",
+    required: ["id_filial", "id_cargo"],
+    properties: {
+      id_filial: { type: "integer", minimum: 1, description: "ID_FILIAL da base selecionada" },
+      id_cargo: { type: "integer", minimum: 1, description: "1 = coordenador · 13 = inventariante" }
+    }
+  },
+  response: {
+    200: {
+      type: "object",
+      properties: { rows: { type: "array", items: funcionarioPorCargo } },
+      required: ["rows"]
+    },
+    400: { ...erroSimples },
+    500: { ...falhaInterna }
+  }
+};

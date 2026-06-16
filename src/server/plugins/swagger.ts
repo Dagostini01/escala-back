@@ -26,7 +26,8 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
         { name: "import", description: "Importação de planilhas" },
         { name: "validation", description: "Validação de escala" },
         { name: "equipes", description: "CRUD de equipes" },
-        { name: "equipe-pessoas", description: "CRUD de pessoas vinculadas às equipes" }
+        { name: "equipe-pessoas", description: "CRUD de pessoas vinculadas às equipes" },
+        { name: "catalogo", description: "Bases operacionais e funcionários por cargo (cadastro de equipe)" }
       ],
       components: {
         securitySchemes: {
