@@ -85,3 +85,46 @@ BEGIN
   );
   CREATE INDEX IX_ESCALA_chat_mensagens_ordem_funcionario ON dbo.ESCALA_chat_mensagens(id_ordemservico, id_funcionario);
 END;
+
+-- 5. Coluna de consentimento de compartilhamento de GPS em dbo.t2_funcionarios
+IF NOT EXISTS (
+  SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+  WHERE TABLE_NAME = 't2_funcionarios' AND COLUMN_NAME = 'compartilha_gps'
+)
+BEGIN
+  ALTER TABLE dbo.t2_funcionarios ADD compartilha_gps BIT NOT NULL CONSTRAINT DF_t2_funcionarios_compartilha_gps DEFAULT 1;
+END;
+
+-- 6. Tabela e colunas de Ponto de Encontro por Filial
+IF OBJECT_ID(N'dbo.ESCALA_pontos_encontro', N'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.ESCALA_pontos_encontro (
+    id UNIQUEIDENTIFIER NOT NULL CONSTRAINT PK_ESCALA_pontos_encontro PRIMARY KEY DEFAULT NEWSEQUENTIALID(),
+    id_filial INT NOT NULL,
+    nome NVARCHAR(150) NOT NULL,
+    latitude DECIMAL(9,6) NOT NULL,
+    longitude DECIMAL(9,6) NOT NULL,
+    raio_tolerancia_metros INT NOT NULL CONSTRAINT DF_ESCALA_pontos_encontro_raio DEFAULT 100,
+    criado_em DATETIME2 NOT NULL CONSTRAINT DF_ESCALA_pontos_encontro_criado DEFAULT SYSUTCDATETIME()
+  );
+  CREATE INDEX IX_ESCALA_pontos_encontro_filial ON dbo.ESCALA_pontos_encontro(id_filial);
+END;
+
+IF NOT EXISTS (
+  SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+  WHERE TABLE_NAME = 'ESCALA_ordemservico' AND COLUMN_NAME = 'usar_ponto_encontro'
+)
+BEGIN
+  ALTER TABLE dbo.ESCALA_ordemservico ADD usar_ponto_encontro BIT NOT NULL CONSTRAINT DF_ESCALA_ordemservico_usar_ponto DEFAULT 0;
+END;
+
+IF NOT EXISTS (
+  SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+  WHERE TABLE_NAME = 'ESCALA_ordemservico' AND COLUMN_NAME = 'id_ponto_encontro'
+)
+BEGIN
+  ALTER TABLE dbo.ESCALA_ordemservico ADD id_ponto_encontro UNIQUEIDENTIFIER NULL;
+  ALTER TABLE dbo.ESCALA_ordemservico ADD CONSTRAINT FK_ESCALA_ordemservico_ponto FOREIGN KEY (id_ponto_encontro) REFERENCES dbo.ESCALA_pontos_encontro(id);
+END;
+
+

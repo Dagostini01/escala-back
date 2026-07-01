@@ -65,8 +65,9 @@ export async function processarEscalaAutomatica(params: AutoEscalaParams): Promi
       const queryCandidates = `
         SELECT 
           f.ID_FUNCIONARIO AS id_funcionario,
-          COALESCE(f.classificacao, 'C') AS classificacao,
-          COALESCE(TRY_CONVERT(float, f.ranking_score), 0.0) AS ranking_score
+          CASE WHEN f.compartilha_gps = 0 THEN CONCAT(COALESCE(NULLIF(TRIM(f.classificacao), ''), 'C'), '-') ELSE COALESCE(NULLIF(TRIM(f.classificacao), ''), 'C') END AS classificacao,
+          COALESCE(TRY_CONVERT(float, f.ranking_score), 0.0) AS ranking_score,
+          COALESCE(f.compartilha_gps, 1) AS compartilha_gps
         FROM dbo.t2_funcionarios f
         INNER JOIN (
           SELECT 
@@ -85,8 +86,8 @@ export async function processarEscalaAutomatica(params: AutoEscalaParams): Promi
           AND (f.bloqueado_ate IS NULL OR f.bloqueado_ate < SYSUTCDATETIME())
           AND c.id_convite IS NULL
           AND esc.id_escala_ordemservico_funcionarios IS NULL
-          AND COALESCE(TRY_CONVERT(float, f.frequencia_real), 0.0) >= @min_presenca
-          AND COALESCE(TRY_CONVERT(float, f.taxa_resposta), 0.0) >= @min_resposta
+          AND COALESCE(TRY_CONVERT(float, f.frequencia_real), 1.0) >= @min_presenca
+          AND COALESCE(TRY_CONVERT(float, f.taxa_resposta), 1.0) >= @min_resposta
       `;
 
       const candidatesResult = await pool.request()
@@ -94,14 +95,23 @@ export async function processarEscalaAutomatica(params: AutoEscalaParams): Promi
         .input("id_filial", sql.Int, os.id_filial)
         .input("min_presenca", sql.Float, minPres)
         .input("min_resposta", sql.Float, minResp)
-        .query<{ id_funcionario: number; classificacao: string; ranking_score: number }>(queryCandidates);
+        .query<{ id_funcionario: number; classificacao: string; ranking_score: number; compartilha_gps: number }>(queryCandidates);
 
       const allCandidates = candidatesResult.recordset;
 
+      // Auxiliar de ordenação que prioriza compartilhamento de GPS (1 antes do 0) e depois o ranking score
+      const sortCandidates = (arr: Array<{ id_funcionario: number; classificacao: string; ranking_score: number; compartilha_gps: number }>) => {
+        return [...arr].sort((a, b) => {
+          const gpsDiff = (b.compartilha_gps === 0 ? 0 : 1) - (a.compartilha_gps === 0 ? 0 : 1);
+          if (gpsDiff !== 0) return gpsDiff;
+          return b.ranking_score - a.ranking_score;
+        });
+      };
+
       // Classifica os candidatos em baldes por classificação
-      const listA = allCandidates.filter(c => c.classificacao.toUpperCase().trim() === "A").sort((a,b) => b.ranking_score - a.ranking_score);
-      const listB = allCandidates.filter(c => c.classificacao.toUpperCase().trim() === "B").sort((a,b) => b.ranking_score - a.ranking_score);
-      const listC = allCandidates.filter(c => c.classificacao.toUpperCase().trim() === "C" || c.classificacao.toUpperCase().trim() === "AUX").sort((a,b) => b.ranking_score - a.ranking_score);
+      const listA = sortCandidates(allCandidates.filter(c => c.classificacao.toUpperCase().trim().startsWith("A")));
+      const listB = sortCandidates(allCandidates.filter(c => c.classificacao.toUpperCase().trim().startsWith("B")));
+      const listC = sortCandidates(allCandidates.filter(c => c.classificacao.toUpperCase().trim().startsWith("C") || c.classificacao.toUpperCase().trim().startsWith("AUX")));
 
       // Algoritmo de seleção respeitando o mix e aplicando fallback em caso de falta de estoque
       const selectedIds: number[] = [];

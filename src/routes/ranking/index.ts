@@ -14,7 +14,8 @@ export default async function registerRanking(app: FastifyInstance) {
           type: "object",
           required: ["id_filial"],
           properties: {
-            id_filial: { type: "integer", minimum: 1, description: "ID da filial" }
+            id_filial: { type: "integer", minimum: 1, description: "ID da filial" },
+            id_cargo: { type: "integer", minimum: 1, description: "ID do cargo", default: 13 }
           }
         },
         response: {
@@ -74,15 +75,16 @@ export default async function registerRanking(app: FastifyInstance) {
     },
     async (req, reply) => {
       try {
-        const query = req.query as { id_filial: number };
+        const query = req.query as { id_filial: number; id_cargo?: number };
         const idFilial = Number(query.id_filial);
+        const idCargo = query.id_cargo ? Number(query.id_cargo) : 13;
 
         if (!Number.isInteger(idFilial) || idFilial <= 0) {
           reply.code(400);
           return { error: "id_filial deve ser um inteiro positivo" };
         }
 
-        const rows = await getEligibleFreelancers(idFilial);
+        const rows = await getEligibleFreelancers(idFilial, idCargo);
         reply.type("application/json");
         return { rows };
       } catch (err) {

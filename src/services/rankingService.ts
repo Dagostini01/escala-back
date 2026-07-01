@@ -14,8 +14,8 @@ export type FreelancerResponse = {
   bloqueado_ate: string | null;
 };
 
-export async function getEligibleFreelancers(idFilial: number): Promise<FreelancerResponse[]> {
-  const rows = await listEligibleFreelancers(idFilial);
+export async function getEligibleFreelancers(idFilial: number, idCargo = 13): Promise<FreelancerResponse[]> {
+  const rows = await listEligibleFreelancers(idFilial, idCargo);
 
   return rows.map((r) => {
     // Normaliza classificação nula para 'C' e remove possíveis espaços

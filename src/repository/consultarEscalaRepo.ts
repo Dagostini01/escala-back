@@ -10,6 +10,8 @@ export async function listSituacaoEscalas(): Promise<ConsultarEscalaRow[]> {
       SELECT 
         v.*,
         COALESCE(eo.id_filial, so.id_filial) AS id_filial,
+        COALESCE(eo.usar_ponto_encontro, 0) AS usar_ponto_encontro,
+        CAST(eo.id_ponto_encontro AS NVARCHAR(36)) AS id_ponto_encontro,
         CASE 
           WHEN v.pct_completamento >= 100 THEN 'Completa'
           WHEN eo.tipo_completamento_ultimo = 'Montagem Automática em Andamento' THEN 'Montagem Automática em Andamento'

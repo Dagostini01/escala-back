@@ -63,7 +63,7 @@ export default async function registerFuncionarios(app: FastifyInstance) {
             SELECT TOP 15
               ID_FUNCIONARIO AS id_funcionario,
               NOME AS nome,
-              COALESCE(classificacao, 'C') AS classificacao,
+              CASE WHEN compartilha_gps = 0 THEN CONCAT(COALESCE(NULLIF(TRIM(classificacao), ''), 'C'), '-') ELSE COALESCE(NULLIF(TRIM(classificacao), ''), 'C') END AS classificacao,
               COALESCE(TRY_CONVERT(float, ranking_score), 0.0) AS ranking_score
             FROM dbo.t2_funcionarios
             WHERE ID_CARGO = 13 -- Freelancers/Inventariantes
@@ -162,7 +162,7 @@ export default async function registerFuncionarios(app: FastifyInstance) {
           .query(`
             SELECT 
               f.NOME AS nome,
-              COALESCE(f.classificacao, 'C') AS classificacao,
+              CASE WHEN f.compartilha_gps = 0 THEN CONCAT(COALESCE(NULLIF(TRIM(f.classificacao), ''), 'C'), '-') ELSE COALESCE(NULLIF(TRIM(f.classificacao), ''), 'C') END AS classificacao,
               COALESCE(TRY_CONVERT(float, f.ranking_score), 0.0) AS ranking_score,
               COALESCE(TRY_CONVERT(float, f.frequencia_real), 0.0) AS frequencia_real,
               COALESCE(TRY_CONVERT(float, f.taxa_resposta), 0.0) AS taxa_resposta,

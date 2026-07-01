@@ -82,7 +82,21 @@ export async function removerFuncionarioDaEscala(idOrdemServico: number, idFunci
   await tx.begin();
 
   try {
-    // 1. Remove da escala se estiver confirmado
+    // 1. Verifica se já confirmou presença
+    const checkConfirm = await new sql.Request(tx)
+      .input("id_ordemservico", sql.Int, idOrdemServico)
+      .input("id_funcionario", sql.Int, idFuncionario)
+      .query(`
+        SELECT func_confirmou 
+        FROM dbo.ESCALA_ordemservico_funcionarios 
+        WHERE id_ordemservico = @id_ordemservico AND id_funcionario = @id_funcionario
+      `);
+    
+    if (checkConfirm.recordset.length > 0 && checkConfirm.recordset[0].func_confirmou === 1) {
+      throw new Error("COLABORADOR_JA_CONFIRMOU_PRESENCA");
+    }
+
+    // 2. Remove da escala se estiver alocado (mas não confirmado, pois validamos acima)
     const deleteEscala = await new sql.Request(tx)
       .input("id_ordemservico", sql.Int, idOrdemServico)
       .input("id_funcionario", sql.Int, idFuncionario)
@@ -94,23 +108,23 @@ export async function removerFuncionarioDaEscala(idOrdemServico: number, idFunci
 
     const wasEscalado = deleteEscala.rowsAffected[0] > 0;
 
-    // 2. Remove/invalida o convite
-    const updateConvite = await new sql.Request(tx)
+    // 3. Remove o convite completamente (seja recusado ou pendente)
+    const deleteConvite = await new sql.Request(tx)
       .input("id_ordemservico", sql.Int, idOrdemServico)
       .input("id_funcionario", sql.Int, idFuncionario)
       .query(`
-        UPDATE dbo.ESCALA_ordemservico_funcionarios_convites
-        SET convite_recusado = 1, justificativa_convite = 'Removido pela gestão', datahora_resposta_convite = SYSUTCDATETIME()
-        WHERE id_ordemservico = @id_ordemservico AND id_funcionario = @id_funcionario AND convite_recusado = 0
+        DELETE FROM dbo.ESCALA_ordemservico_funcionarios_convites
+        OUTPUT deleted.id_convite
+        WHERE id_ordemservico = @id_ordemservico AND id_funcionario = @id_funcionario
       `);
 
-    const wasConvidado = updateConvite.rowsAffected[0] > 0;
+    const wasConvidado = deleteConvite.rowsAffected[0] > 0;
 
     if (!wasEscalado && !wasConvidado) {
       throw new Error("VINCULO_NAO_ENCONTRADO");
     }
 
-    // 3. Atualiza contadores na OS
+    // 4. Atualiza contadores na OS
     await new sql.Request(tx)
       .input("id_ordemservico", sql.Int, idOrdemServico)
       .input("dec_escalados", sql.Int, wasEscalado ? 1 : 0)
@@ -202,8 +216,8 @@ export async function iniciarSorteioLote(params: SorteioParams): Promise<Record<
           AND (f.bloqueado_ate IS NULL OR f.bloqueado_ate < SYSUTCDATETIME())
           AND c.id_convite IS NULL
           AND esc.id_escala_ordemservico_funcionarios IS NULL
-          AND COALESCE(TRY_CONVERT(float, f.frequencia_real), 0.0) >= @min_presenca
-          AND COALESCE(TRY_CONVERT(float, f.taxa_resposta), 0.0) >= @min_resposta
+          AND COALESCE(TRY_CONVERT(float, f.frequencia_real), 1.0) >= @min_presenca
+          AND COALESCE(TRY_CONVERT(float, f.taxa_resposta), 1.0) >= @min_resposta
       `;
 
       const candidatesResult = await new sql.Request(tx)

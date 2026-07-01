@@ -15,6 +15,7 @@ import registerPenalidades from "./routes/penalidades";
 import registerSorteio from "./routes/sorteio";
 import registerEscalaLocal from "./routes/escala";
 import registerFuncionarios from "./routes/funcionarios";
+import registerColaboradorRoutes from "./routes/colaborador";
 import { registerCors } from "./server/plugins/cors";
 
 
@@ -50,6 +51,7 @@ async function main() {
   registerSorteio(app);
   registerEscalaLocal(app);
   registerFuncionarios(app);
+  registerColaboradorRoutes(app);
   await registerOpenApiUi(app);
 
   const port = Number(process.env.PORT ?? 3000);
