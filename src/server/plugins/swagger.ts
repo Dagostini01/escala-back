@@ -27,7 +27,8 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
         { name: "validation", description: "Validação de escala" },
         { name: "equipes", description: "CRUD de equipes" },
         { name: "equipe-pessoas", description: "CRUD de pessoas vinculadas às equipes" },
-        { name: "catalogo", description: "Bases operacionais e funcionários por cargo (cadastro de equipe)" }
+        { name: "catalogo", description: "Bases operacionais e funcionários por cargo (cadastro de equipe)" },
+        { name: "consultar-escala", description: "Views para tela Consultar Escalas" }
       ],
       components: {
         securitySchemes: {

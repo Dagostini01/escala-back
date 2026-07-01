@@ -514,6 +514,11 @@ const funcionarioPorCargo = {
   required: ["id_funcionario", "nome"]
 } as const;
 
+const consultarEscalaViewRow = {
+  type: "object",
+  additionalProperties: true
+} as const;
+
 export const basesOperacionaisGetSchema: FastifySchema = {
   tags: ["catalogo"],
   summary: "Listar bases operacionais",
@@ -545,6 +550,44 @@ export const funcionariosPorCargoGetSchema: FastifySchema = {
     200: {
       type: "object",
       properties: { rows: { type: "array", items: funcionarioPorCargo } },
+      required: ["rows"]
+    },
+    400: { ...erroSimples },
+    500: { ...falhaInterna }
+  }
+};
+
+export const consultarEscalaSituacaoGetSchema: FastifySchema = {
+  tags: ["consultar-escala"],
+  summary: "Listar situação das escalas",
+  description:
+    "Retorna os dados da view `dbo.VIEW_ESCALA_SITUACAO_ESCALAS`, usada na lista principal da tela Consultar Escalas.",
+  response: {
+    200: {
+      type: "object",
+      properties: { rows: { type: "array", items: consultarEscalaViewRow } },
+      required: ["rows"]
+    },
+    500: { ...falhaInterna }
+  }
+};
+
+export const consultarEscalaPessoasEscaladasGetSchema: FastifySchema = {
+  tags: ["consultar-escala"],
+  summary: "Listar pessoas escaladas na OS",
+  description:
+    "Retorna os dados da view `dbo.VIEW_ESCALA_PESSOAS_ESCALADAS` filtrando por `id_ordemservico`.",
+  querystring: {
+    type: "object",
+    required: ["id_ordemservico"],
+    properties: {
+      id_ordemservico: { type: "integer", minimum: 1, description: "ID da ordem de serviço selecionada" }
+    }
+  },
+  response: {
+    200: {
+      type: "object",
+      properties: { rows: { type: "array", items: consultarEscalaViewRow } },
       required: ["rows"]
     },
     400: { ...erroSimples },
