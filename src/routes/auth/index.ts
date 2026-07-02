@@ -113,7 +113,7 @@ export default async function registerAuth(app: FastifyInstance) {
         return { error: "Sessão inválida ou expirada" };
       }
       reply.type("application/json");
-      return { usuario: { email: sessao.email } };
+      return { usuario: { email: sessao.email, perfil: sessao.perfil } };
     } catch {
       const correlation_id = randomUUID();
       reply.code(500);

@@ -47,6 +47,19 @@ export async function findEquipeById(equipeId: string): Promise<EquipeRow | null
   return mapEquipeRow(r.recordset[0]);
 }
 
+export async function findEquipeByCoordenadorId(coordenadorId: number): Promise<EquipeRow | null> {
+  const pool = await getPool();
+  const r = await pool
+    .request()
+    .input("coordenador_id", sql.Int, coordenadorId)
+    .query<EquipeRow>(
+      `SELECT ${selectEquipeColumns} ` +
+        "FROM dbo.ESCALA_equipe " +
+        "WHERE coordenador_id = @coordenador_id"
+    );
+  return mapEquipeRow(r.recordset[0]);
+}
+
 export async function insertEquipe(input: EquipeInput): Promise<EquipeRow> {
   const pool = await getPool();
   const r = await pool

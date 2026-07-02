@@ -50,6 +50,7 @@ export async function insertSessao(idUsuario: string, token: string, expiraEm: D
 export type SessaoUsuarioRow = {
   id_usuario: string;
   email: string;
+  perfil: string;
 };
 
 export async function findSessaoValidaPorToken(token: string): Promise<SessaoUsuarioRow | null> {
@@ -58,7 +59,7 @@ export async function findSessaoValidaPorToken(token: string): Promise<SessaoUsu
     .request()
     .input("token", sql.NVarChar(64), token)
     .query<SessaoUsuarioRow>(
-      `SELECT CAST(u.id AS NVARCHAR(36)) AS id_usuario, u.email ` +
+      `SELECT CAST(u.id AS NVARCHAR(36)) AS id_usuario, u.email, u.perfil ` +
         `FROM ${AUTH_TBL_SESSAO} s ` +
         `INNER JOIN ${AUTH_TBL_USUARIO} u ON u.id = s.id_usuario ` +
         `WHERE s.token = @token AND s.expira_em > SYSUTCDATETIME()`

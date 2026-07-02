@@ -154,8 +154,11 @@ export const authMeSchema: FastifySchema = {
       properties: {
         usuario: {
           type: "object",
-          properties: { email: { type: "string" } },
-          required: ["email"]
+          properties: { 
+            email: { type: "string" },
+            perfil: { type: "string" }
+          },
+          required: ["email", "perfil"]
         }
       },
       required: ["usuario"]
@@ -389,7 +392,9 @@ const equipePessoa = {
       description: "Gerado automaticamente pela API no POST usando o maior ID existente + 1."
     },
     equipe_id: { type: "string" },
-    funcionario_id: { type: "integer" }
+    funcionario_id: { type: "integer" },
+    NOME: { type: "string" },
+    CPF: { type: "string" }
   },
   required: ["equipe_pessoa_id", "equipe_id", "funcionario_id"]
 } as const;
