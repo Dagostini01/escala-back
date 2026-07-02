@@ -29,7 +29,9 @@ function validationMessage(code: string): string | null {
     COORDENADOR_NOME_OBRIGATORIO: "coordenador_nome é obrigatório",
     COORDENADOR_NOME_LONGO: "coordenador_nome deve ter no máximo 500 caracteres",
     EQUIPE_QTDE_INVENTARIANTES_INVALIDA:
-      "equipe_qtde_inventariantes deve ser um inteiro maior ou igual a zero"
+      "equipe_qtde_inventariantes deve ser um inteiro maior ou igual a zero",
+    COORDENADOR_JA_POSSUI_EQUIPE:
+      "Este coordenador já possui uma equipe cadastrada. Cada coordenador só pode gerenciar 1 equipe."
   };
   return messages[code] ?? null;
 }

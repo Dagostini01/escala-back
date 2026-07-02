@@ -1,6 +1,7 @@
 import {
   deleteEquipe,
   findEquipeById,
+  findEquipeByCoordenadorId,
   insertEquipe,
   listEquipes,
   updateEquipe,
@@ -56,11 +57,21 @@ export async function buscarEquipe(equipeId: string): Promise<EquipeRow | null> 
 }
 
 export async function criarEquipe(input: EquipePayload): Promise<EquipeRow> {
-  return insertEquipe(validarEquipePayload(input));
+  const payload = validarEquipePayload(input);
+  const existing = await findEquipeByCoordenadorId(payload.coordenador_id);
+  if (existing) {
+    throw new Error("COORDENADOR_JA_POSSUI_EQUIPE");
+  }
+  return insertEquipe(payload);
 }
 
 export async function alterarEquipe(equipeId: string, input: EquipePayload): Promise<EquipeRow | null> {
-  return updateEquipe(validarIdTexto(equipeId), validarEquipePayload(input));
+  const payload = validarEquipePayload(input);
+  const existing = await findEquipeByCoordenadorId(payload.coordenador_id);
+  if (existing && existing.equipe_id !== equipeId) {
+    throw new Error("COORDENADOR_JA_POSSUI_EQUIPE");
+  }
+  return updateEquipe(validarIdTexto(equipeId), payload);
 }
 
 export async function removerEquipe(equipeId: string): Promise<boolean> {
