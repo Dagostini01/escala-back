@@ -60,6 +60,7 @@ export async function syncOs(): Promise<void> {
       LEFT JOIN dbo.t2_funcionarios f ON f.ID_FUNCIONARIO = a.coordenador
       LEFT JOIN dbo.ESCALA_ordemservico b ON b.id_ordemservico = a.id_ordemservico
       WHERE b.id_ordemservico IS NULL
+        AND a.dia >= '2026-01-01'
     `;
 
     const insertResult = await new sql.Request(tx).query(insertQuery);

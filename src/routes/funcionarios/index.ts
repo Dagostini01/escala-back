@@ -207,4 +207,13 @@ export default async function registerFuncionarios(app: FastifyInstance) {
       }
     }
   );
+
+  // 4. Obter a lista de IDs de colaboradores atualmente online
+  app.get(
+    "/api/funcionarios/online",
+    async (req, reply) => {
+      const onlineSet = (app as any).onlineColaboradores as Set<number> | undefined;
+      return { online: onlineSet ? Array.from(onlineSet) : [] };
+    }
+  );
 }

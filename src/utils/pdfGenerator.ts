@@ -8,6 +8,7 @@ interface ReportMember {
   status_pessoa: string;
   periodo: string;
   func_confirmou: number;
+  datahora_checkin?: string | null;
 }
 
 interface ScaleReportData {
@@ -17,6 +18,7 @@ interface ScaleReportData {
   loja_nome: string;
   coordenador_nome: string;
   members: ReportMember[];
+  mostrar_checkin?: boolean;
 }
 
 export function generateScalePdf(data: ScaleReportData, stream: Writable): void {
@@ -122,7 +124,20 @@ export function generateScalePdf(data: ScaleReportData, stream: Writable): void 
     }
 
     const cleanCpf = m.cpf || "—";
-    const statusText = m.func_confirmou === 1 ? "Confirmado" : m.status_pessoa;
+    
+    let statusText = m.status_pessoa;
+    if (data.mostrar_checkin !== false) {
+      if (m.func_confirmou === 1) {
+        const timeStr = m.datahora_checkin 
+          ? new Date(m.datahora_checkin).toLocaleTimeString("pt-BR", { hour: '2-digit', minute: '2-digit' })
+          : "";
+        statusText = `Presente ${timeStr ? `(${timeStr})` : ""}`;
+      } else {
+        statusText = "Aguardando Check-in";
+      }
+    } else {
+      statusText = m.func_confirmou === 1 ? "Alocado" : "Pendente";
+    }
 
     doc.text(m.nome || "Não informado", 45, currentY, { width: 205, height: 12, lineBreak: false })
        .text(cleanCpf, 260, currentY)
@@ -138,6 +153,8 @@ export function generateScalePdf(data: ScaleReportData, stream: Writable): void 
   // Summary and metrics
   const confirmedCount = data.members.filter(m => m.func_confirmou === 1).length;
   const pendingCount = data.members.filter(m => m.func_confirmou !== 1).length;
+  const labelConfirmed = data.mostrar_checkin !== false ? "Presentes" : "Confirmados";
+  const labelPending = data.mostrar_checkin !== false ? "Pendentes" : "Não Confirmados";
 
   doc.rect(40, doc.y, 515, 35).fill("#eff6ff");
   doc.rect(40, doc.y, 515, 35).stroke("#bfdbfe");
@@ -145,7 +162,7 @@ export function generateScalePdf(data: ScaleReportData, stream: Writable): void 
   doc.fillColor("#1e3a8a")
      .fontSize(10)
      .font("Helvetica-Bold")
-     .text(`Resumo Geral:  ${data.members.length} Alocados  |  ${confirmedCount} Confirmados  |  ${pendingCount} Pendentes`, 50, doc.y + 12);
+     .text(`Resumo Geral:  ${data.members.length} Alocados  |  ${confirmedCount} ${labelConfirmed}  |  ${pendingCount} ${labelPending}`, 50, doc.y + 12);
 
   doc.end();
 }

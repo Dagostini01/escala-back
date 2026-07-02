@@ -154,8 +154,11 @@ export const authMeSchema: FastifySchema = {
       properties: {
         usuario: {
           type: "object",
-          properties: { email: { type: "string" } },
-          required: ["email"]
+          properties: { 
+            email: { type: "string" },
+            perfil: { type: "string" }
+          },
+          required: ["email", "perfil"]
         }
       },
       required: ["usuario"]

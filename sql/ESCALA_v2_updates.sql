@@ -78,7 +78,10 @@ BEGIN
     id_funcionario INT NOT NULL,
     remetente VARCHAR(50) NOT NULL, -- 'gestor' ou 'colaborador'
     mensagem NVARCHAR(MAX) NOT NULL,
+    entregue BIT NOT NULL CONSTRAINT DF_ESCALA_chat_mensagens_entregue DEFAULT 0,
     lida BIT NOT NULL CONSTRAINT DF_ESCALA_chat_mensagens_lida DEFAULT 0,
+    datahora_entrega DATETIME2 NULL,
+    datahora_leitura DATETIME2 NULL,
     criado_em DATETIME2 NOT NULL CONSTRAINT DF_ESCALA_chat_mensagens_criado DEFAULT SYSUTCDATETIME(),
     CONSTRAINT FK_ESCALA_chat_mensagens_ordem FOREIGN KEY (id_ordemservico) REFERENCES dbo.ESCALA_ordemservico(id_ordemservico),
     CONSTRAINT FK_ESCALA_chat_mensagens_funcionario FOREIGN KEY (id_funcionario) REFERENCES dbo.t2_funcionarios(ID_FUNCIONARIO)
@@ -125,6 +128,15 @@ IF NOT EXISTS (
 BEGIN
   ALTER TABLE dbo.ESCALA_ordemservico ADD id_ponto_encontro UNIQUEIDENTIFIER NULL;
   ALTER TABLE dbo.ESCALA_ordemservico ADD CONSTRAINT FK_ESCALA_ordemservico_ponto FOREIGN KEY (id_ponto_encontro) REFERENCES dbo.ESCALA_pontos_encontro(id);
+END;
+
+-- 6. Corrigir tamanho de tipo_completamento_ultimo para evitar truncamento na escala automática
+IF EXISTS (
+  SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
+  WHERE TABLE_NAME = 'ESCALA_ordemservico' AND COLUMN_NAME = 'tipo_completamento_ultimo'
+)
+BEGIN
+  ALTER TABLE dbo.ESCALA_ordemservico ALTER COLUMN tipo_completamento_ultimo VARCHAR(100) NULL;
 END;
 
 

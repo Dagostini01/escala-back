@@ -16,7 +16,7 @@ export async function getFuncionarioFromToken(authorizationHeader: string | unde
   const r = await pool.request()
     .input("email", sql.VarChar(255), sessao.email)
     .query(`
-      SELECT ID_FUNCIONARIO as id_funcionario, NOME as nome, CPF as cpf, MAIL as email, VALOR as valor_diaria, SALARIO as salario
+      SELECT ID_FUNCIONARIO as id_funcionario, NOME as nome, CPF as cpf, MAIL as email, VALOR as valor_diaria, SALARIO as salario, ID_CARGO as id_cargo
       FROM dbo.t2_funcionarios 
       WHERE MAIL = @email AND INATIVO = 'N'
     `);
@@ -294,11 +294,32 @@ export default async function registerColaboradorRoutes(app: FastifyInstance) {
       .input("confirmado_por", sql.VarChar(150), targetConfirmado)
       .query(`
         UPDATE dbo.ESCALA_ordemservico_funcionarios
-        SET func_confirmou = 1, ConfirmadoPorQuem = @confirmado_por
+        SET func_confirmou = 1, ConfirmadoPorQuem = @confirmado_por, datahora_checkin = GETDATE()
         WHERE id_ordemservico = @id_ordemservico AND id_funcionario = @id_funcionario
       `);
 
     return { success: true, distance: Math.round(dist) };
+  });
+
+  // POST /api/colaborador/escalas/:id_ordemservico/confirmar-chegada
+  app.post("/api/colaborador/escalas/:id_ordemservico/confirmar-chegada", async (req, reply) => {
+    const colab = (req as any).colaborador;
+    const { id_ordemservico } = req.params as { id_ordemservico: string };
+
+    const pool = await getPool();
+    await pool.request()
+      .input("id_ordemservico", sql.Int, Number(id_ordemservico))
+      .input("id_funcionario", sql.Int, colab.id_funcionario)
+      .query(`
+        UPDATE dbo.ESCALA_ordemservico_funcionarios
+        SET func_confirmou = 1, 
+            data_foto = GETDATE(), 
+            dataora_chegada = GETDATE(),
+            ConfirmadoPorQuem = 'Biometria'
+        WHERE id_ordemservico = @id_ordemservico AND id_funcionario = @id_funcionario
+      `);
+
+    return { success: true };
   });
 
   // GET /api/colaborador/ganhos
@@ -306,29 +327,30 @@ export default async function registerColaboradorRoutes(app: FastifyInstance) {
     const colab = (req as any).colaborador;
     const pool = await getPool();
     
-    // Contamos presenças passadas confirmadas
-    const presencasRes = await pool.request()
-      .input("id_funcionario", sql.Int, colab.id_funcionario)
-      .query(`
-        SELECT COUNT(*) AS total_comparecido
-        FROM dbo.ESCALA_ordemservico_funcionarios esc
-        INNER JOIN dbo.t2_ordemservico os ON os.id_ordemservico = esc.id_ordemservico
-        WHERE esc.id_funcionario = @id_funcionario
-          AND esc.func_confirmou = 1
-          AND esc.escala_declinada_pos_aceite = 0
-          AND os.data_os < GETDATE()
-      `);
-    const totalComparecido = presencasRes.recordset[0]?.total_comparecido ?? 0;
-    
-    // Diária base
-    const diariaVal = Number(colab.valor_diaria || colab.salario || 100);
-    const totalGanhos = totalComparecido * diariaVal;
+    try {
+      const result = await pool.request()
+        .input("CPF", sql.VarChar(20), colab.cpf)
+        .execute("dbo.sp_Consulta_HistoricoPagamentos_PorCPF");
 
-    return {
-      valor_diaria: diariaVal,
-      total_escalas_realizadas: totalComparecido,
-      total_ganhos_estimados: totalGanhos
-    };
+      const recordsets = result.recordsets as any;
+      return {
+        valor_diaria: Number(colab.valor_diaria || colab.salario || 100),
+        dataset1: recordsets[0] ?? [], // 1ª quinzena mês anterior
+        dataset2: recordsets[1] ?? [], // 2ª quinzena mês anterior
+        dataset3: recordsets[2] ?? [], // 1ª quinzena mês atual
+        dataset4: recordsets[3] ?? [], // 2ª quinzena mês atual
+      };
+    } catch (err) {
+      console.error("Erro ao executar sp_Consulta_HistoricoPagamentos_PorCPF:", err);
+      // Fallback para evitar quebrar a tela caso a procedure falhe ou não exista
+      return {
+        valor_diaria: Number(colab.valor_diaria || colab.salario || 100),
+        dataset1: [],
+        dataset2: [],
+        dataset3: [],
+        dataset4: []
+      };
+    }
   });
 
   // GET /api/colaborador/chat/:id_ordemservico
@@ -337,6 +359,23 @@ export default async function registerColaboradorRoutes(app: FastifyInstance) {
     const { id_ordemservico } = req.params as { id_ordemservico: string };
     const pool = await getPool();
     
+    // Marcar como entregue e lido as mensagens enviadas pelo gestor
+    await pool.request()
+      .input("id_ordemservico", sql.Int, Number(id_ordemservico))
+      .input("id_funcionario", sql.Int, colab.id_funcionario)
+      .query(`
+        UPDATE dbo.ESCALA_chat_mensagens
+        SET 
+          entregue = 1,
+          datahora_entrega = COALESCE(datahora_entrega, SYSUTCDATETIME()),
+          lida = 1,
+          datahora_leitura = COALESCE(datahora_leitura, SYSUTCDATETIME())
+        WHERE id_ordemservico = @id_ordemservico 
+          AND id_funcionario = @id_funcionario 
+          AND remetente = 'gestor'
+          AND (lida = 0 OR entregue = 0)
+      `);
+
     const result = await pool.request()
       .input("id_ordemservico", sql.Int, Number(id_ordemservico))
       .input("id_funcionario", sql.Int, colab.id_funcionario)
@@ -346,7 +385,10 @@ export default async function registerColaboradorRoutes(app: FastifyInstance) {
           remetente,
           mensagem,
           criado_em,
-          lida
+          entregue,
+          lida,
+          datahora_entrega,
+          datahora_leitura
         FROM dbo.ESCALA_chat_mensagens
         WHERE id_ordemservico = @id_ordemservico AND id_funcionario = @id_funcionario
         ORDER BY criado_em ASC
@@ -416,6 +458,178 @@ export default async function registerColaboradorRoutes(app: FastifyInstance) {
         SET compartilha_gps = @consent
         WHERE ID_FUNCIONARIO = @id_funcionario
       `);
+    return { success: true };
+  });
+
+  // GET /api/colaborador/perfil
+  app.get("/api/colaborador/perfil", async (req, reply) => {
+    const colab = (req as any).colaborador;
+    const pool = await getPool();
+    const result = await pool.request()
+      .input("id_funcionario", sql.Int, colab.id_funcionario)
+      .query(`
+        SELECT 
+          NOME AS nome,
+          MAIL AS email,
+          FONE AS telefone,
+          CELULAR AS celular,
+          CEP AS cep,
+          ENDERECO AS endereco,
+          NUMERO_RESIDENCIA AS numero_residencia,
+          COMPLEMENTO AS complemento,
+          BAIRRO AS bairro,
+          MUNICIPIO AS municipio,
+          UF AS uf
+        FROM dbo.t2_funcionarios
+        WHERE ID_FUNCIONARIO = @id_funcionario
+      `);
+    return { perfil: result.recordset[0] ?? null };
+  });
+
+  // PUT /api/colaborador/perfil
+  app.put("/api/colaborador/perfil", async (req, reply) => {
+    const colab = (req as any).colaborador;
+    const body = req.body as {
+      nome?: string;
+      email?: string;
+      telefone?: string;
+      celular?: string;
+      cep?: string;
+      endereco?: string;
+      numero_residencia?: string;
+      complemento?: string;
+      bairro?: string;
+      municipio?: string;
+      uf?: string;
+    };
+
+    const pool = await getPool();
+    await pool.request()
+      .input("id_funcionario", sql.Int, colab.id_funcionario)
+      .input("nome", sql.VarChar(255), body.nome || colab.nome)
+      .input("email", sql.VarChar(255), body.email || colab.email)
+      .input("telefone", sql.VarChar(50), body.telefone || null)
+      .input("celular", sql.VarChar(50), body.celular || null)
+      .input("cep", sql.VarChar(20), body.cep || null)
+      .input("endereco", sql.VarChar(255), body.endereco || null)
+      .input("numero_residencia", sql.VarChar(50), body.numero_residencia || null)
+      .input("complemento", sql.VarChar(100), body.complemento || null)
+      .input("bairro", sql.VarChar(100), body.bairro || null)
+      .input("municipio", sql.VarChar(100), body.municipio || null)
+      .input("uf", sql.VarChar(2), body.uf || null)
+      .query(`
+        UPDATE dbo.t2_funcionarios
+        SET 
+          NOME = @nome,
+          MAIL = @email,
+          FONE = @telefone,
+          CELULAR = @celular,
+          CEP = @cep,
+          ENDERECO = @endereco,
+          NUMERO_RESIDENCIA = @numero_residencia,
+          COMPLEMENTO = @complemento,
+          BAIRRO = @bairro,
+          MUNICIPIO = @municipio,
+          UF = @uf
+        WHERE ID_FUNCIONARIO = @id_funcionario
+      `);
+    return { success: true };
+  });
+
+  // GET /api/colaborador/coordenador/escalas
+  app.get("/api/colaborador/coordenador/escalas", async (req, reply) => {
+    const colab = (req as any).colaborador;
+    const pool = await getPool();
+    const result = await pool.request()
+      .input("id_funcionario", sql.Int, colab.id_funcionario)
+      .query(`
+        SELECT DISTINCT
+          os.id_ordemservico,
+          os.data_os,
+          cl.NOME_FANTASIA AS cliente_nome,
+          lj.NOME_FANTASIA AS loja_nome
+        FROM dbo.ESCALA_ordemservico_funcionarios esc
+        INNER JOIN dbo.ESCALA_ordemservico eo ON eo.id_ordemservico = esc.id_ordemservico
+        INNER JOIN dbo.t2_ordemservico os ON os.id_ordemservico = eo.id_ordemservico
+        INNER JOIN dbo.t2_funcionarios f ON f.ID_FUNCIONARIO = esc.id_funcionario
+        LEFT JOIN dbo.t2_clientes cl ON cl.ID_CLIENTE = os.id_cliente
+        LEFT JOIN dbo.t2_clientes_filial lj ON lj.ID_CLIENTE = os.id_cliente AND lj.ID_CLIENTE_FILIAL = os.id_cliente_filial
+        WHERE esc.id_funcionario = @id_funcionario
+          AND esc.escala_declinada_pos_aceite = 0
+          AND f.ID_CARGO = 1
+          AND os.data_os >= DATEADD(day, -1, CAST(GETDATE() AS DATE))
+          AND os.data_os <= CAST(GETDATE() AS DATE)
+        ORDER BY os.data_os DESC
+      `);
+    return { escalas: result.recordset || [] };
+  });
+
+  // GET /api/colaborador/coordenador/escalas/:id_ordemservico/equipe
+  app.get("/api/colaborador/coordenador/escalas/:id_ordemservico/equipe", async (req, reply) => {
+    const { id_ordemservico } = req.params as { id_ordemservico: string };
+    const pool = await getPool();
+    const result = await pool.request()
+      .input("id_ordemservico", sql.Int, id_ordemservico)
+      .query(`
+        SELECT 
+          f.ID_FUNCIONARIO AS id_funcionario,
+          f.NOME AS nome,
+          f.CPF AS cpf,
+          f.ID_CARGO AS id_cargo,
+          c.CARGO AS cargo_nome,
+          esc.func_confirmou AS presente,
+          esc.datahora_checkin
+        FROM dbo.ESCALA_ordemservico_funcionarios esc
+        INNER JOIN dbo.t2_funcionarios f ON f.ID_FUNCIONARIO = esc.id_funcionario
+        LEFT JOIN dbo.t2_cargos c ON c.ID_CARGO = f.ID_CARGO
+        WHERE esc.id_ordemservico = @id_ordemservico
+          AND esc.escala_declinada_pos_aceite = 0
+        ORDER BY f.NOME ASC
+      `);
+    return { equipe: result.recordset || [] };
+  });
+
+  // POST /api/colaborador/coordenador/escalas/:id_ordemservico/confirmar-presenca
+  app.post("/api/colaborador/coordenador/escalas/:id_ordemservico/confirmar-presenca", async (req, reply) => {
+    const { id_ordemservico } = req.params as { id_ordemservico: string };
+    const { id_funcionario, justificativa_chegada, datahora_chegada } = req.body as {
+      id_funcionario: number;
+      justificativa_chegada?: string;
+      datahora_chegada?: string;
+    };
+    
+    const pool = await getPool();
+    
+    if (datahora_chegada) {
+      // Registro manual com data retroativa/personalizada e justificativa
+      await pool.request()
+        .input("id_ordemservico", sql.Int, Number(id_ordemservico))
+        .input("id_funcionario", sql.Int, id_funcionario)
+        .input("justificativa", sql.VarChar(1000), justificativa_chegada || "Registro manual")
+        .input("datahora_chegada", sql.DateTime, new Date(datahora_chegada))
+        .query(`
+          UPDATE dbo.ESCALA_ordemservico_funcionarios
+          SET func_confirmou = 1,
+              dataora_chegada = @datahora_chegada,
+              justificativa_chegada = @justificativa,
+              ConfirmadoPorQuem = 'Coordenador (Manual)'
+          WHERE id_ordemservico = @id_ordemservico
+            AND id_funcionario = @id_funcionario
+        `);
+    } else {
+      // Validação biométrica normal
+      await pool.request()
+        .input("id_ordemservico", sql.Int, Number(id_ordemservico))
+        .input("id_funcionario", sql.Int, id_funcionario)
+        .query(`
+          UPDATE dbo.ESCALA_ordemservico_funcionarios
+          SET func_confirmou = 1,
+              dataora_chegada = GETDATE(),
+              ConfirmadoPorQuem = 'Coordenador (Biometria)'
+          WHERE id_ordemservico = @id_ordemservico
+            AND id_funcionario = @id_funcionario
+        `);
+    }
     return { success: true };
   });
 }

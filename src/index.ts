@@ -16,6 +16,9 @@ import registerSorteio from "./routes/sorteio";
 import registerEscalaLocal from "./routes/escala";
 import registerFuncionarios from "./routes/funcionarios";
 import registerColaboradorRoutes from "./routes/colaborador";
+import registerUsuarios from "./routes/usuarios";
+import registerChatRoutes from "./routes/chat";
+import registerIntegracao from "./routes/integracao";
 import { registerCors } from "./server/plugins/cors";
 
 
@@ -26,6 +29,7 @@ import { registerContentParsers } from "./server/plugins/contentParsers";
 import { registerOpenApi, registerOpenApiUi } from "./server/plugins/swagger";
 import { startSyncOsJob } from "./jobs/syncOsJob";
 import { startJanela24hJob } from "./jobs/verificarJanela24h";
+import { startUpdateIndicatorsJob } from "./jobs/updateIndicatorsJob";
 
 
 
@@ -52,6 +56,9 @@ async function main() {
   registerEscalaLocal(app);
   registerFuncionarios(app);
   registerColaboradorRoutes(app);
+  registerUsuarios(app);
+  registerChatRoutes(app);
+  registerIntegracao(app);
   await registerOpenApiUi(app);
 
   const port = Number(process.env.PORT ?? 3000);
@@ -70,12 +77,43 @@ async function main() {
       }
     });
 
+    const onlineColaboradores = new Set<number>();
+    const activeConnections = new Map<string, number>();
+    const onlineAdmins = new Map<string, { email: string, perfil: string }>();
+
+    app.decorate("onlineColaboradores", onlineColaboradores);
+
+    function broadcastOnlineAdmins() {
+      const uniqueOps = new Map<string, string>();
+      for (const [_, info] of onlineAdmins.entries()) {
+        if (info.perfil !== "gestor") {
+          uniqueOps.set(info.email, info.email);
+        }
+      }
+      io.emit("online_admins_change", Array.from(uniqueOps.values()));
+    }
+
     io.on("connection", (socket) => {
       console.log("Chat client connected:", socket.id);
+
+      socket.on("register_admin", (data: { email: string; perfil: string }) => {
+        if (data && data.email) {
+          onlineAdmins.set(socket.id, { email: data.email, perfil: data.perfil });
+          broadcastOnlineAdmins();
+        }
+      });
       
       socket.on("join_room", (room) => {
         socket.join(room);
         console.log(`Socket ${socket.id} joined room: ${room}`);
+        
+        const colabId = Number(room);
+        if (!isNaN(colabId) && colabId > 0) {
+          activeConnections.set(socket.id, colabId);
+          onlineColaboradores.add(colabId);
+          // Notifica os painéis administrativos que o colaborador ficou online
+          io.emit("colaborador_status_change", { id_funcionario: colabId, status: "online" });
+        }
       });
 
       socket.on("send_message", (data) => {
@@ -85,6 +123,23 @@ async function main() {
 
       socket.on("disconnect", () => {
         console.log("Chat client disconnected:", socket.id);
+        
+        if (onlineAdmins.has(socket.id)) {
+          onlineAdmins.delete(socket.id);
+          broadcastOnlineAdmins();
+        }
+
+        const colabId = activeConnections.get(socket.id);
+        if (colabId !== undefined) {
+          activeConnections.delete(socket.id);
+          // Verifica se o colaborador ainda possui conexões em outros sockets
+          const stillConnected = Array.from(activeConnections.values()).includes(colabId);
+          if (!stillConnected) {
+            onlineColaboradores.delete(colabId);
+            // Notifica os painéis administrativos que o colaborador ficou offline
+            io.emit("colaborador_status_change", { id_funcionario: colabId, status: "offline" });
+          }
+        }
       });
     });
 
@@ -92,6 +147,8 @@ async function main() {
     startSyncOsJob();
     // Inicia o job de checagem da janela de 24h críticas (a cada 5 minutos)
     startJanela24hJob();
+    // Inicia o job diário de atualização de indicadores
+    startUpdateIndicatorsJob();
   } catch (err) {
     console.error("Falha ao iniciar servidor:", err);
     process.exit(1);
