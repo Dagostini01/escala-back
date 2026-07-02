@@ -12,6 +12,7 @@ export interface AutoEscalaParams {
   mix_percent_a: number;
   mix_percent_b: number;
   mix_percent_c: number;
+  percent_backup?: number;
 }
 
 export async function processarEscalaAutomatica(params: AutoEscalaParams): Promise<Record<number, { convocados: number; erro?: string }>> {
@@ -144,14 +145,31 @@ export async function processarEscalaAutomatica(params: AutoEscalaParams): Promi
         selectedIds.push(...selectedExtraB.map(c => c.id_funcionario));
       }
 
-      // 4. Executa os convites para a lista selecionada
+      // Seleciona candidatos adicionais para backup caso configurado
+      const percentBackup = params.percent_backup || 0;
+      const backupVagas = percentBackup > 0 ? Math.ceil(os.qtde_inventariantes * (percentBackup / 100)) : 0;
+      
+      const remainingAll = sortCandidates(allCandidates.filter(c => !selectedIds.includes(c.id_funcionario)));
+      const backupIds = remainingAll.slice(0, backupVagas).map(c => c.id_funcionario);
+
+      // 4. Executa os convites para a lista selecionada (regulares)
       let convCount = 0;
       for (const idFunc of selectedIds) {
         try {
-          await criarConviteManual(idOrdemServico, idFunc);
+          await criarConviteManual(idOrdemServico, idFunc, false);
           convCount++;
         } catch (convErr) {
           console.error(`[autoEscalaService] Erro ao convidar ${idFunc} na OS ${idOrdemServico}:`, convErr);
+        }
+      }
+
+      // Executa os convites para backups
+      for (const idFunc of backupIds) {
+        try {
+          await criarConviteManual(idOrdemServico, idFunc, true);
+          convCount++;
+        } catch (convErr) {
+          console.error(`[autoEscalaService] Erro ao convidar backup ${idFunc} na OS ${idOrdemServico}:`, convErr);
         }
       }
 

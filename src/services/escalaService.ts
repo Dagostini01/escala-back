@@ -1,7 +1,7 @@
 import { getPool, sql } from "../db";
 import { randomUUID } from "crypto";
 
-export async function criarConviteManual(idOrdemServico: number, idFuncionario: number): Promise<void> {
+export async function criarConviteManual(idOrdemServico: number, idFuncionario: number, isBackup = false): Promise<void> {
   const pool = await getPool();
   
   // Busca dados da OS para preencher os campos do convite
@@ -48,15 +48,16 @@ export async function criarConviteManual(idOrdemServico: number, idFuncionario: 
       .input("id_cliente_filial", sql.Int, os.id_cliente_filial)
       .input("id_cliente", sql.Int, os.id_cliente)
       .input("validade", sql.DateTime, validade)
+      .input("is_backup", sql.Bit, isBackup ? 1 : 0)
       .query(`
         INSERT INTO dbo.ESCALA_ordemservico_funcionarios_convites (
           id_convite, id_funcionario, id_ordemservico, id_tipo_convite,
           datahora_convite, validade_convite, id_filial, id_cliente_filial, id_cliente,
-          convite_visualizado, convite_aceito, convite_recusado
+          convite_visualizado, convite_aceito, convite_recusado, is_backup
         ) VALUES (
           @id_convite, @id_funcionario, @id_ordemservico, 'Manual',
           SYSUTCDATETIME(), @validade, @id_filial, @id_cliente_filial, @id_cliente,
-          0, 0, 0
+          0, 0, 0, @is_backup
         )
       `);
 

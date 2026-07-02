@@ -63,12 +63,45 @@ export default async function registerEscalaLocal(app: FastifyInstance) {
     async (req, reply) => {
       try {
         const params = req.params as { id: number };
-        const body = req.body as { id_funcionario: number };
+        const body = req.body as { id_funcionario: number; is_backup?: boolean; justificativa?: string };
         
         const idOrdemServico = Number(params.id);
         const idFuncionario = Number(body.id_funcionario);
+        const isBackup = body.is_backup === true;
+        const justificativa = body.justificativa;
 
-        await criarConviteManual(idOrdemServico, idFuncionario);
+        const pool = await getPool();
+        
+        // 1. Busca dados de capacidade da OS
+        const osRes = await pool.request()
+          .input("id_ordemservico", sql.Int, idOrdemServico)
+          .query(`
+            SELECT 
+              eo.qtde_inventariantes,
+              (SELECT COUNT(*) FROM dbo.ESCALA_ordemservico_funcionarios WHERE id_ordemservico = @id_ordemservico AND escala_declinada_pos_aceite = 0 AND ISNULL(is_backup, 0) = 0) AS alocados_regulares
+            FROM dbo.ESCALA_ordemservico eo
+            WHERE eo.id_ordemservico = @id_ordemservico
+          `);
+        const os = osRes.recordset[0];
+        
+        if (os && !isBackup && os.alocados_regulares >= os.qtde_inventariantes) {
+          if (!justificativa || !justificativa.trim()) {
+            reply.code(409);
+            return { error: "LIMITE_EXCEDIDO", message: "A escala já atingiu a capacidade máxima. Deseja justificar alocação excedente?" };
+          }
+          
+          // Se tiver justificativa, registra o log de excedente
+          await pool.request()
+            .input("id_ordemservico", sql.Int, idOrdemServico)
+            .input("id_funcionario", sql.Int, idFuncionario)
+            .input("justificativa", sql.VarChar(500), justificativa.trim())
+            .query(`
+              INSERT INTO dbo.ESCALA_excedentes_logs (id_ordemservico, id_funcionario, usuario_override, justificativa)
+              VALUES (@id_ordemservico, @id_funcionario, 'Gestor', @justificativa)
+            `);
+        }
+
+        await criarConviteManual(idOrdemServico, idFuncionario, isBackup);
         return { success: true, message: "Convite manual enviado com sucesso!" };
       } catch (err) {
         const msg = (err as Error).message;
@@ -1034,6 +1067,169 @@ export default async function registerEscalaLocal(app: FastifyInstance) {
         console.error(err);
         reply.code(500);
         return { error: "Erro ao buscar clientes" };
+      }
+    }
+  );
+
+  // 17. POST /api/escalas/:id/alocar-override
+  app.post(
+    "/api/escalas/:id/alocar-override",
+    async (req, reply) => {
+      try {
+        const { id } = req.params as { id: string };
+        const { id_funcionario, justificativa } = req.body as { id_funcionario: number; justificativa: string };
+
+        if (!id_funcionario || !justificativa || !justificativa.trim()) {
+          reply.code(400);
+          return { error: "ID do funcionário e justificativa são obrigatórios" };
+        }
+
+        const pool = await getPool();
+        const idOrdemServico = Number(id);
+
+        // 1. Grava no log de excedentes
+        await pool.request()
+          .input("id_ordemservico", sql.Int, idOrdemServico)
+          .input("id_funcionario", sql.Int, id_funcionario)
+          .input("justificativa", sql.VarChar(500), justificativa.trim())
+          .query(`
+            INSERT INTO dbo.ESCALA_excedentes_logs (id_ordemservico, id_funcionario, usuario_override, justificativa)
+            VALUES (@id_ordemservico, @id_funcionario, 'Gestor', @justificativa)
+          `);
+
+        // 2. Aloca diretamente na escala como confirmado pelo gestor (override)
+        const idEscala = randomUUID();
+        await pool.request()
+          .input("id_escala", sql.UniqueIdentifier, idEscala)
+          .input("id_ordemservico", sql.Int, idOrdemServico)
+          .input("id_funcionario", sql.Int, id_funcionario)
+          .query(`
+            IF NOT EXISTS (
+              SELECT 1 FROM dbo.ESCALA_ordemservico_funcionarios 
+              WHERE id_ordemservico = @id_ordemservico AND id_funcionario = @id_funcionario
+            )
+            BEGIN
+              INSERT INTO dbo.ESCALA_ordemservico_funcionarios (
+                id_escala_ordemservico_funcionarios, id_ordemservico, id_funcionario, func_confirmou, ConfirmadoPorQuem, escala_declinada_pos_aceite, is_backup
+              ) VALUES (
+                @id_escala, @id_ordemservico, @id_funcionario, 1, 'Gestor (Override)', 0, 0
+              )
+            END
+            ELSE
+            BEGIN
+              UPDATE dbo.ESCALA_ordemservico_funcionarios
+              SET func_confirmou = 1, ConfirmadoPorQuem = 'Gestor (Override)', escala_declinada_pos_aceite = 0
+              WHERE id_ordemservico = @id_ordemservico AND id_funcionario = @id_funcionario
+            END
+          `);
+
+        return { success: true };
+      } catch (err) {
+        console.error(err);
+        reply.code(500);
+        return { error: "Erro ao realizar alocação com override" };
+      }
+    }
+  );
+
+  // 18. POST /api/escalas/:id/lembrete-chat
+  app.post(
+    "/api/escalas/:id/lembrete-chat",
+    async (req, reply) => {
+      try {
+        const { id } = req.params as { id: string };
+        const { tipo } = req.body as { tipo: "confirmados" | "pendentes" };
+
+        if (tipo !== "confirmados" && tipo !== "pendentes") {
+          reply.code(400);
+          return { error: "Tipo deve ser 'confirmados' ou 'pendentes'" };
+        }
+
+        const pool = await getPool();
+        const idOrdemServico = Number(id);
+
+        let query = "";
+        let mensagem = "";
+
+        if (tipo === "confirmados") {
+          query = `
+            SELECT id_funcionario 
+            FROM dbo.ESCALA_ordemservico_funcionarios 
+            WHERE id_ordemservico = @id_ordemservico AND func_confirmou = 1 AND escala_declinada_pos_aceite = 0
+          `;
+          mensagem = `Olá! Confirmamos sua escala para a OS-${idOrdemServico}. Por favor, lembre-se de registrar seu check-in de GPS ao chegar no ponto de encontro!`;
+        } else {
+          query = `
+            SELECT id_funcionario 
+            FROM dbo.ESCALA_ordemservico_funcionarios_convites 
+            WHERE id_ordemservico = @id_ordemservico AND convite_aceito = 0 AND convite_recusado = 0 AND validade_convite > GETDATE()
+          `;
+          mensagem = `Atenção: você tem um convite pendente de resposta para a OS-${idOrdemServico}. Por favor, acesse o portal do colaborador e responda se aceita ou recusa a escala.`;
+        }
+
+        const result = await pool.request()
+          .input("id_ordemservico", sql.Int, idOrdemServico)
+          .query<{ id_funcionario: number }>(query);
+
+        const list = result.recordset ?? [];
+        let count = 0;
+
+        for (const item of list) {
+          const uuid = randomUUID();
+          await pool.request()
+            .input("id", sql.UniqueIdentifier, uuid)
+            .input("id_ordemservico", sql.Int, idOrdemServico)
+            .input("id_funcionario", sql.Int, item.id_funcionario)
+            .input("mensagem", sql.NVarChar(sql.MAX), mensagem)
+            .query(`
+              INSERT INTO dbo.ESCALA_chat_mensagens (
+                id, id_ordemservico, id_funcionario, remetente, mensagem, lida, criado_em, 
+                entregue, datahora_entrega, enviado_por
+              ) VALUES (
+                @id, @id_ordemservico, @id_funcionario, 'gestor', @mensagem, 0, SYSUTCDATETIME(),
+                1, SYSUTCDATETIME(), 'Sistema'
+              )
+            `);
+          count++;
+        }
+
+        return { success: true, count };
+      } catch (err) {
+        console.error(err);
+        reply.code(500);
+        return { error: "Erro ao enviar lembretes via chat" };
+      }
+    }
+  );
+
+  // 19. GET /api/escalas/relatorios/excedentes
+  app.get(
+    "/api/escalas/relatorios/excedentes",
+    async (req, reply) => {
+      try {
+        const pool = await getPool();
+        const result = await pool.request().query(`
+          SELECT 
+            log.id_log,
+            log.id_ordemservico,
+            log.id_funcionario,
+            f.NOME AS funcionario_nome,
+            log.usuario_override,
+            log.justificativa,
+            log.datahora_registro,
+            eo.dia AS data_os,
+            cl.NOME_FANTASIA AS cliente_nome
+          FROM dbo.ESCALA_excedentes_logs log
+          INNER JOIN dbo.t2_funcionarios f ON f.ID_FUNCIONARIO = log.id_funcionario
+          LEFT JOIN dbo.ESCALA_ordemservico eo ON eo.id_ordemservico = log.id_ordemservico
+          LEFT JOIN dbo.t2_cliente cl ON cl.ID_CLIENTE = eo.id_cliente
+          ORDER BY log.datahora_registro DESC
+        `);
+        return { rows: result.recordset ?? [] };
+      } catch (err) {
+        console.error(err);
+        reply.code(500);
+        return { error: "Erro ao carregar relatório de excedentes" };
       }
     }
   );

@@ -130,13 +130,17 @@ export default async function registerColaboradorRoutes(app: FastifyInstance) {
         const osRes = await new sql.Request(tx)
           .input("id_ordemservico", sql.Int, convite.id_ordemservico)
           .query(`
-            SELECT os.quantidade_pessoas,
-              (SELECT COUNT(*) FROM dbo.ESCALA_ordemservico_funcionarios WHERE id_ordemservico = @id_ordemservico AND escala_declinada_pos_aceite = 0) AS alocados
-            FROM dbo.t2_ordemservico os
-            WHERE os.id_ordemservico = @id_ordemservico
+            SELECT 
+              eo.qtde_inventariantes,
+              (SELECT COUNT(*) FROM dbo.ESCALA_ordemservico_funcionarios WHERE id_ordemservico = @id_ordemservico AND escala_declinada_pos_aceite = 0 AND ISNULL(is_backup, 0) = 0) AS alocados_regulares,
+              (SELECT COUNT(*) FROM dbo.ESCALA_ordemservico_funcionarios WHERE id_ordemservico = @id_ordemservico AND escala_declinada_pos_aceite = 0 AND is_backup = 1) AS alocados_backup
+            FROM dbo.ESCALA_ordemservico eo
+            WHERE eo.id_ordemservico = @id_ordemservico
           `);
         const osInfo = osRes.recordset[0];
-        if (osInfo && osInfo.alocados >= osInfo.quantidade_pessoas) {
+        const isConviteBackup = convite.is_backup === true || convite.is_backup === 1 || convite.is_backup === "1";
+
+        if (!isConviteBackup && osInfo && osInfo.alocados_regulares >= osInfo.qtde_inventariantes) {
           // Atualiza convite como recusado por preenchimento de vagas
           await new sql.Request(tx)
             .input("id_convite", sql.UniqueIdentifier, id_convite)
@@ -147,7 +151,7 @@ export default async function registerColaboradorRoutes(app: FastifyInstance) {
             `);
           await tx.commit();
           reply.code(409);
-          return { error: "Corrida encerrada! Todas as vagas já foram preenchidas." };
+          return { error: "Corrida encerrada! Todas as vagas regulares já foram preenchidas." };
         }
 
         // Aceita o convite
@@ -164,11 +168,12 @@ export default async function registerColaboradorRoutes(app: FastifyInstance) {
           .input("id_ordemservico", sql.Int, convite.id_ordemservico)
           .input("id_funcionario", sql.Int, colab.id_funcionario)
           .input("id_convite", sql.VarChar(36), id_convite)
+          .input("is_backup", sql.Bit, isConviteBackup ? 1 : 0)
           .query(`
             INSERT INTO dbo.ESCALA_ordemservico_funcionarios (
-              id_escala_ordemservico_funcionarios, id_ordemservico, id_funcionario, func_confirmou, id_convite, declinio_dentro_periodo_permitido, escala_declinada_pos_aceite
+              id_escala_ordemservico_funcionarios, id_ordemservico, id_funcionario, func_confirmou, id_convite, declinio_dentro_periodo_permitido, escala_declinada_pos_aceite, is_backup
             ) VALUES (
-              NEWID(), @id_ordemservico, @id_funcionario, 1, @id_convite, 0, 0
+              NEWID(), @id_ordemservico, @id_funcionario, 1, @id_convite, 0, 0, @is_backup
             )
           `);
 
