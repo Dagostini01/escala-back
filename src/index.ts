@@ -63,6 +63,11 @@ async function main() {
 
   const port = Number(process.env.PORT ?? 3000);
   const host = process.env.HOST ?? "0.0.0.0";
+  const onlineColaboradores = new Set<number>();
+  const activeConnections = new Map<string, number>();
+  const onlineAdmins = new Map<string, { email: string, perfil: string }>();
+
+  app.decorate("onlineColaboradores", onlineColaboradores);
 
   try {
     await app.listen({ port, host });
@@ -76,12 +81,6 @@ async function main() {
         methods: ["GET", "POST"]
       }
     });
-
-    const onlineColaboradores = new Set<number>();
-    const activeConnections = new Map<string, number>();
-    const onlineAdmins = new Map<string, { email: string, perfil: string }>();
-
-    app.decorate("onlineColaboradores", onlineColaboradores);
 
     function broadcastOnlineAdmins() {
       const uniqueOps = new Map<string, string>();
