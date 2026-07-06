@@ -175,8 +175,8 @@ export default async function registerChatRoutes(app: FastifyInstance) {
     }
   });
 
-  // 4. GET /api/funcionarios/search
-  app.get("/api/funcionarios/search", async (req, reply) => {
+  // 4. GET /api/chat/funcionarios/search
+  app.get("/api/chat/funcionarios/search", async (req, reply) => {
     try {
       const admin = await getAdminUser(req);
       if (!admin) {
