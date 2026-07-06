@@ -12,7 +12,7 @@ variables:
   vmImageName: "ubuntu-latest"
   dockerfilePath: "$(Build.SourcesDirectory)/Dockerfile"
   imageRepository: "pedrodagostini/escalaback"
-  tag: "latest"
+  tag: "$(Build.BuildId)"
   azureSubscription: "DatasiteEscalaAPI"
   dockerRegistryServiceConnection: "DockerHubConnection"
   webAppName: "DatasiteEscalaAPI"
@@ -37,6 +37,7 @@ stages:
               containerRegistry: $(dockerRegistryServiceConnection)
               tags: |
                 $(tag)
+                latest
 
   - stage: Deploy
     displayName: Deploy to production
