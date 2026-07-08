@@ -3,6 +3,39 @@ import { randomUUID } from "crypto";
 import { getPool, sql } from "../../db";
 import { criarConviteManual, removerFuncionarioDaEscala } from "../../services/escalaService";
 import { generateScalePdf } from "../../utils/pdfGenerator";
+import { relatorioFrequenciaGetSchema, relatorioDesempenhoGetSchema } from "../../schemas/routes";
+
+const DEFAULT_PAGE_SIZE = 50;
+const MAX_PAGE_SIZE = 200;
+
+function parsePagination(query: { page?: string; page_size?: string }): {
+  page: number;
+  pageSize: number;
+  offset: number;
+} {
+  const parsedPage = Number(query.page);
+  const parsedPageSize = Number(query.page_size);
+  const page = Number.isInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
+  const pageSize =
+    Number.isInteger(parsedPageSize) && parsedPageSize > 0
+      ? Math.min(parsedPageSize, MAX_PAGE_SIZE)
+      : DEFAULT_PAGE_SIZE;
+  return { page, pageSize, offset: (page - 1) * pageSize };
+}
+
+function buildPaginationMeta(page: number, pageSize: number, total: number): {
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+} {
+  return {
+    page,
+    page_size: pageSize,
+    total,
+    total_pages: pageSize > 0 ? Math.ceil(total / pageSize) : 0
+  };
+}
 
 export default async function registerEscalaLocal(app: FastifyInstance) {
   // 1. Enviar convite manual
@@ -919,6 +952,7 @@ export default async function registerEscalaLocal(app: FastifyInstance) {
   // 15. GET /api/escalas/relatorios/frequencia
   app.get(
     "/api/escalas/relatorios/frequencia",
+    { schema: relatorioFrequenciaGetSchema },
     async (req, reply) => {
       try {
         const query = req.query as {
@@ -926,7 +960,11 @@ export default async function registerEscalaLocal(app: FastifyInstance) {
           id_cliente?: string;
           data_inicio?: string;
           data_fim?: string;
+          page?: string;
+          page_size?: string;
         };
+
+        const { page, pageSize, offset } = parsePagination(query);
 
         const pool = await getPool();
         const request = pool.request();
@@ -950,6 +988,9 @@ export default async function registerEscalaLocal(app: FastifyInstance) {
           request.input("data_fim", sql.Date, query.data_fim);
         }
 
+        request.input("offset", sql.Int, offset);
+        request.input("page_size", sql.Int, pageSize);
+
         const sqlQuery = `
           SELECT 
             id_funcionario,
@@ -965,15 +1006,20 @@ export default async function registerEscalaLocal(app: FastifyInstance) {
                 AS decimal(5,2)
               ), 
               0.0
-            ) AS pct_presenca
+            ) AS pct_presenca,
+            COUNT(*) OVER() AS total_count
           FROM dbo.VIEW_OS_PESSOAS
           ${whereClause}
           GROUP BY id_funcionario, NOME, FilialDatasite, Cliente
           ORDER BY NOME ASC, Cliente ASC
+          OFFSET @offset ROWS FETCH NEXT @page_size ROWS ONLY
         `;
 
         const result = await request.query(sqlQuery);
-        return { rows: result.recordset ?? [] };
+        const records = result.recordset ?? [];
+        const total = records.length > 0 ? Number(records[0].total_count) : 0;
+        const rows = records.map(({ total_count, ...row }) => row);
+        return { rows, pagination: buildPaginationMeta(page, pageSize, total) };
       } catch (err) {
         console.error(err);
         reply.code(500);
@@ -985,6 +1031,7 @@ export default async function registerEscalaLocal(app: FastifyInstance) {
   // 15b. GET /api/escalas/relatorios/desempenho
   app.get(
     "/api/escalas/relatorios/desempenho",
+    { schema: relatorioDesempenhoGetSchema },
     async (req, reply) => {
       try {
         const query = req.query as {
@@ -992,7 +1039,11 @@ export default async function registerEscalaLocal(app: FastifyInstance) {
           id_cliente?: string;
           data_inicio?: string;
           data_fim?: string;
+          page?: string;
+          page_size?: string;
         };
+
+        const { page, pageSize, offset } = parsePagination(query);
 
         const pool = await getPool();
         const request = pool.request();
@@ -1016,6 +1067,9 @@ export default async function registerEscalaLocal(app: FastifyInstance) {
           request.input("data_fim", sql.Date, query.data_fim);
         }
 
+        request.input("offset", sql.Int, offset);
+        request.input("page_size", sql.Int, pageSize);
+
         const sqlQuery = `
           SELECT 
             p.id_funcionario,
@@ -1032,16 +1086,21 @@ export default async function registerEscalaLocal(app: FastifyInstance) {
               ), 
               0.0
             ) AS pct_presenca,
-            COALESCE(fa.media_pecas_hora, 0.0) AS media_produtividade
+            COALESCE(fa.media_pecas_hora, 0.0) AS media_produtividade,
+            COUNT(*) OVER() AS total_count
           FROM dbo.VIEW_OS_PESSOAS p
           LEFT JOIN dbo.ESCALA_funcionarios_avaliacao fa ON fa.id_funcionario = p.id_funcionario
           ${whereClause}
           GROUP BY p.id_funcionario, p.NOME, p.FilialDatasite, p.Cliente, fa.media_pecas_hora
           ORDER BY p.NOME ASC, p.Cliente ASC
+          OFFSET @offset ROWS FETCH NEXT @page_size ROWS ONLY
         `;
 
         const result = await request.query(sqlQuery);
-        return { rows: result.recordset ?? [] };
+        const records = result.recordset ?? [];
+        const total = records.length > 0 ? Number(records[0].total_count) : 0;
+        const rows = records.map(({ total_count, ...row }) => row);
+        return { rows, pagination: buildPaginationMeta(page, pageSize, total) };
       } catch (err) {
         console.error(err);
         reply.code(500);

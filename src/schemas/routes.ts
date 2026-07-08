@@ -599,3 +599,93 @@ export const consultarEscalaPessoasEscaladasGetSchema: FastifySchema = {
     500: { ...falhaInterna }
   }
 };
+
+const relatorioFiltrosPaginacao = {
+  type: "object",
+  properties: {
+    id_filial: { type: "integer", minimum: 1, description: "Filtra pela base/filial" },
+    id_cliente: { type: "integer", minimum: 1, description: "Filtra pelo cliente" },
+    data_inicio: { type: "string", format: "date", description: "Data inicial (YYYY-MM-DD). Recomendado sempre enviar." },
+    data_fim: { type: "string", format: "date", description: "Data final (YYYY-MM-DD). Recomendado sempre enviar." },
+    page: { type: "integer", minimum: 1, default: 1, description: "Página atual (padrão 1)" },
+    page_size: { type: "integer", minimum: 1, maximum: 200, default: 50, description: "Itens por página (padrão 50, máximo 200)" }
+  }
+} as const;
+
+const paginacaoMeta = {
+  type: "object",
+  properties: {
+    page: { type: "integer" },
+    page_size: { type: "integer" },
+    total: { type: "integer" },
+    total_pages: { type: "integer" }
+  },
+  required: ["page", "page_size", "total", "total_pages"]
+} as const;
+
+const relatorioFrequenciaRow = {
+  type: "object",
+  properties: {
+    id_funcionario: { type: "integer" },
+    nome_colaborador: { type: "string", nullable: true },
+    base_nome: { type: "string" },
+    cliente_nome: { type: "string" },
+    total_escalas: { type: "integer" },
+    comparecimentos: { type: "integer" },
+    pct_presenca: { type: "number" }
+  },
+  required: ["id_funcionario", "base_nome", "cliente_nome", "total_escalas", "comparecimentos", "pct_presenca"]
+} as const;
+
+const relatorioDesempenhoRow = {
+  type: "object",
+  properties: {
+    id_funcionario: { type: "integer" },
+    nome_colaborador: { type: "string", nullable: true },
+    base_nome: { type: "string" },
+    cliente_nome: { type: "string" },
+    total_escalas: { type: "integer" },
+    comparecimentos: { type: "integer" },
+    pct_presenca: { type: "number" },
+    media_produtividade: { type: "number" }
+  },
+  required: ["id_funcionario", "base_nome", "cliente_nome", "total_escalas", "comparecimentos", "pct_presenca", "media_produtividade"]
+} as const;
+
+export const relatorioFrequenciaGetSchema: FastifySchema = {
+  tags: ["relatorios"],
+  summary: "Relatório de frequência (paginado)",
+  description:
+    "Agrega presença por colaborador/cliente a partir de `dbo.VIEW_OS_PESSOAS`. Suporta filtros e paginação. Recomenda-se sempre enviar `data_inicio`/`data_fim`.",
+  querystring: relatorioFiltrosPaginacao,
+  response: {
+    200: {
+      type: "object",
+      properties: {
+        rows: { type: "array", items: relatorioFrequenciaRow },
+        pagination: paginacaoMeta
+      },
+      required: ["rows", "pagination"]
+    },
+    500: { ...erroSimples }
+  }
+};
+
+export const relatorioDesempenhoGetSchema: FastifySchema = {
+  tags: ["relatorios"],
+  summary: "Relatório de desempenho (paginado)",
+  description:
+    "Agrega presença e produtividade média por colaborador/cliente a partir de `dbo.VIEW_OS_PESSOAS` com `dbo.ESCALA_funcionarios_avaliacao`. Suporta filtros e paginação. Recomenda-se sempre enviar `data_inicio`/`data_fim`.",
+  querystring: relatorioFiltrosPaginacao,
+  response: {
+    200: {
+      type: "object",
+      properties: {
+        rows: { type: "array", items: relatorioDesempenhoRow },
+        pagination: paginacaoMeta
+      },
+      required: ["rows", "pagination"]
+    },
+    500: { ...erroSimples }
+  }
+};
