@@ -967,7 +967,7 @@ export default async function registerEscalaLocal(app: FastifyInstance) {
               0.0
             ) AS pct_presenca
           FROM dbo.VIEW_OS_PESSOAS
-          \${whereClause}
+          ${whereClause}
           GROUP BY id_funcionario, NOME, FilialDatasite, Cliente
           ORDER BY NOME ASC, Cliente ASC
         `;
