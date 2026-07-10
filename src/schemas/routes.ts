@@ -623,18 +623,43 @@ const paginacaoMeta = {
   required: ["page", "page_size", "total", "total_pages"]
 } as const;
 
+const relatorioFrequenciaClienteRow = {
+  type: "object",
+  properties: {
+    id_cliente: { type: "integer", nullable: true },
+    cliente_nome: { type: "string" },
+    total_escalas: { type: "integer" },
+    total_aceites: { type: "integer" },
+    total_presencas: { type: "integer" },
+    pct_aceite: { type: "number" },
+    pct_presenca: { type: "number" }
+  },
+  required: ["cliente_nome", "total_escalas", "total_aceites", "total_presencas", "pct_aceite", "pct_presenca"]
+} as const;
+
 const relatorioFrequenciaRow = {
   type: "object",
   properties: {
     id_funcionario: { type: "integer" },
     nome_colaborador: { type: "string", nullable: true },
     base_nome: { type: "string" },
-    cliente_nome: { type: "string" },
     total_escalas: { type: "integer" },
-    comparecimentos: { type: "integer" },
-    pct_presenca: { type: "number" }
+    total_aceites: { type: "integer" },
+    total_presencas: { type: "integer" },
+    pct_aceite: { type: "number" },
+    pct_presenca: { type: "number" },
+    clientes: { type: "array", items: relatorioFrequenciaClienteRow }
   },
-  required: ["id_funcionario", "base_nome", "cliente_nome", "total_escalas", "comparecimentos", "pct_presenca"]
+  required: [
+    "id_funcionario",
+    "base_nome",
+    "total_escalas",
+    "total_aceites",
+    "total_presencas",
+    "pct_aceite",
+    "pct_presenca",
+    "clientes"
+  ]
 } as const;
 
 const relatorioDesempenhoRow = {
@@ -654,9 +679,9 @@ const relatorioDesempenhoRow = {
 
 export const relatorioFrequenciaGetSchema: FastifySchema = {
   tags: ["relatorios"],
-  summary: "Relatório de frequência (paginado)",
+  summary: "Relatório de frequência (paginado por pessoa)",
   description:
-    "Agrega presença por colaborador/cliente a partir de `dbo.VIEW_OS_PESSOAS`. Suporta filtros e paginação. Recomenda-se sempre enviar `data_inicio`/`data_fim`.",
+    "Retorna, por Base Operacional (filial), o funil de frequência de cada colaborador: Total Escalas (recebidas), Total Aceites, Total Presenças, % Aceite (aceites/escalas) e % Presença (presenças/aceites). Cada linha é um colaborador com os totais consolidados e um array `clientes[]` com o detalhamento por cliente (para expandir/recolher no front). Fonte: `dbo.VIEW_OS_PESSOAS` (dimensões + Presenca) + `dbo.t3_ordemservico_funcionarios` (aceite legado) combinado com o fluxo digital novo `dbo.ESCALA_ordemservico_funcionarios` / `dbo.ESCALA_ordemservico_funcionarios_convites` (func_confirmou/convite_aceito). Aceite = confirmou/aceitou em qualquer fonte; Presença = aceite E (Presenca PRESENTE/JUSTIFICADO ou check-in). Considera apenas dados a partir de 2025-01-01 (antes disso não havia estrutura de confirmação). Paginação é por pessoa.",
   querystring: relatorioFiltrosPaginacao,
   response: {
     200: {

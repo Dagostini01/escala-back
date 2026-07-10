@@ -969,56 +969,181 @@ export default async function registerEscalaLocal(app: FastifyInstance) {
         const pool = await getPool();
         const request = pool.request();
 
-        let whereClause = "WHERE id_funcionario IS NOT NULL";
-        
+        // Filtros aplicados sobre a VIEW_OS_PESSOAS (alias p).
+        // Piso fixo em 2025: antes disso a estrutura de confirmação/aceite não existia
+        // (func_confirmou vem NULL), então esses períodos são ignorados no relatório.
+        let whereClause = "WHERE p.id_funcionario IS NOT NULL AND p.dia >= @data_min";
+        request.input("data_min", sql.Date, "2025-01-01");
+
         if (query.id_filial) {
-          whereClause += " AND id_filial = @id_filial";
+          whereClause += " AND p.id_filial = @id_filial";
           request.input("id_filial", sql.Int, Number(query.id_filial));
         }
         if (query.id_cliente) {
-          whereClause += " AND id_cliente = @id_cliente";
+          whereClause += " AND p.id_cliente = @id_cliente";
           request.input("id_cliente", sql.Int, Number(query.id_cliente));
         }
         if (query.data_inicio) {
-          whereClause += " AND dia >= @data_inicio";
+          whereClause += " AND p.dia >= @data_inicio";
           request.input("data_inicio", sql.Date, query.data_inicio);
         }
         if (query.data_fim) {
-          whereClause += " AND dia <= @data_fim";
+          whereClause += " AND p.dia <= @data_fim";
           request.input("data_fim", sql.Date, query.data_fim);
         }
 
         request.input("offset", sql.Int, offset);
         request.input("page_size", sql.Int, pageSize);
 
+        // Funil de frequência. O "aceite" vem de DUAS fontes combinadas:
+        //   - t3_ordemservico_funcionarios (legado, hoje populado) -> func_confirmou
+        //   - ESCALA_ordemservico_funcionarios / _convites (fluxo digital novo, ainda em
+        //     implantação; passará a ser populado) -> func_confirmou / convite_aceito
+        // Definições:
+        //   recebeu   = escalado (linha na VIEW_OS_PESSOAS)
+        //   aceitou   = confirmou/aceitou em QUALQUER uma das fontes
+        //   presente  = aceitou E (Presenca PRESENTE/JUSTIFICADO OU check-in no fluxo novo)
+        // As tabelas ESCALA_* são pré-agregadas por (id_ordemservico, id_funcionario) para
+        // evitar fan-out (múltiplos convites/linhas por pessoa na mesma OS inflariam a contagem).
         const sqlQuery = `
-          SELECT 
-            id_funcionario,
-            NOME AS nome_colaborador,
-            COALESCE(FilialDatasite, 'Sem Base') AS base_nome,
-            COALESCE(Cliente, 'Sem Cliente') AS cliente_nome,
-            SUM(CASE WHEN Presenca IN ('PRESENTE', 'PRESENTE (JUSTIFICADO)') OR faltou = 'S' OR Presenca = 'FALTOU' THEN 1 ELSE 0 END) AS total_escalas,
-            SUM(CASE WHEN Presenca IN ('PRESENTE', 'PRESENTE (JUSTIFICADO)') THEN 1 ELSE 0 END) AS comparecimentos,
-            COALESCE(
-              CAST(
-                CAST(SUM(CASE WHEN Presenca IN ('PRESENTE', 'PRESENTE (JUSTIFICADO)') THEN 1 ELSE 0 END) AS float) 
-                / NULLIF(SUM(CASE WHEN Presenca IN ('PRESENTE', 'PRESENTE (JUSTIFICADO)') OR faltou = 'S' OR Presenca = 'FALTOU' THEN 1 ELSE 0 END), 0) * 100 
-                AS decimal(5,2)
-              ), 
-              0.0
-            ) AS pct_presenca,
-            COUNT(*) OVER() AS total_count
-          FROM dbo.VIEW_OS_PESSOAS
-          ${whereClause}
-          GROUP BY id_funcionario, NOME, FilialDatasite, Cliente
-          ORDER BY NOME ASC, Cliente ASC
-          OFFSET @offset ROWS FETCH NEXT @page_size ROWS ONLY
+          WITH esc_agg AS (
+            SELECT
+              id_ordemservico,
+              id_funcionario,
+              MAX(CASE WHEN func_confirmou = 1 AND ISNULL(escala_declinada_pos_aceite, 0) = 0 THEN 1 ELSE 0 END) AS confirmou,
+              MAX(CASE WHEN datahora_checkin IS NOT NULL THEN 1 ELSE 0 END) AS teve_checkin
+            FROM dbo.ESCALA_ordemservico_funcionarios
+            GROUP BY id_ordemservico, id_funcionario
+          ),
+          conv_agg AS (
+            SELECT
+              id_ordemservico,
+              id_funcionario,
+              MAX(CASE WHEN convite_aceito = 1 THEN 1 ELSE 0 END) AS aceitou_convite
+            FROM dbo.ESCALA_ordemservico_funcionarios_convites
+            GROUP BY id_ordemservico, id_funcionario
+          ),
+          linhas AS (
+            SELECT
+              p.id_filial,
+              COALESCE(p.FilialDatasite, 'Sem Base') AS base_nome,
+              p.id_funcionario,
+              p.NOME AS nome_colaborador,
+              p.id_cliente,
+              COALESCE(p.Cliente, 'Sem Cliente') AS cliente_nome,
+              CASE
+                WHEN osf.func_confirmou = 1 OR ea.confirmou = 1 OR ca.aceitou_convite = 1
+                THEN 1 ELSE 0
+              END AS aceitou,
+              CASE
+                WHEN (osf.func_confirmou = 1 OR ea.confirmou = 1 OR ca.aceitou_convite = 1)
+                  AND (p.Presenca IN ('PRESENTE', 'PRESENTE (JUSTIFICADO)') OR ea.teve_checkin = 1)
+                THEN 1 ELSE 0
+              END AS presente
+            FROM dbo.VIEW_OS_PESSOAS p
+            INNER JOIN dbo.t3_ordemservico_funcionarios osf
+              ON osf.id_ordemservico_funcionarios = p.id_ordemservico_funcionarios
+            LEFT JOIN esc_agg ea
+              ON ea.id_ordemservico = p.id_ordemservico AND ea.id_funcionario = p.id_funcionario
+            LEFT JOIN conv_agg ca
+              ON ca.id_ordemservico = p.id_ordemservico AND ca.id_funcionario = p.id_funcionario
+            ${whereClause}
+          ),
+          por_cliente AS (
+            SELECT
+              id_filial, base_nome, id_funcionario, nome_colaborador, id_cliente, cliente_nome,
+              COUNT(*) AS total_escalas,
+              SUM(aceitou) AS total_aceites,
+              SUM(presente) AS total_presencas
+            FROM linhas
+            GROUP BY id_filial, base_nome, id_funcionario, nome_colaborador, id_cliente, cliente_nome
+          ),
+          por_pessoa AS (
+            SELECT
+              id_filial, base_nome, id_funcionario, nome_colaborador,
+              SUM(total_escalas) AS total_escalas,
+              SUM(total_aceites) AS total_aceites,
+              SUM(total_presencas) AS total_presencas,
+              COUNT(*) OVER() AS total_pessoas,
+              ROW_NUMBER() OVER (ORDER BY base_nome ASC, nome_colaborador ASC, id_funcionario ASC) AS rn
+            FROM por_cliente
+            GROUP BY id_filial, base_nome, id_funcionario, nome_colaborador
+          )
+          SELECT
+            pp.total_pessoas,
+            pp.id_filial,
+            pp.base_nome,
+            pp.id_funcionario,
+            pp.nome_colaborador,
+            pp.total_escalas   AS pessoa_total_escalas,
+            pp.total_aceites   AS pessoa_total_aceites,
+            pp.total_presencas AS pessoa_total_presencas,
+            pc.id_cliente,
+            pc.cliente_nome,
+            pc.total_escalas   AS cliente_total_escalas,
+            pc.total_aceites   AS cliente_total_aceites,
+            pc.total_presencas AS cliente_total_presencas
+          FROM por_pessoa pp
+          INNER JOIN por_cliente pc
+            ON pc.id_filial = pp.id_filial AND pc.id_funcionario = pp.id_funcionario
+          WHERE pp.rn > @offset AND pp.rn <= @offset + @page_size
+          ORDER BY pp.base_nome ASC, pp.nome_colaborador ASC, pp.id_funcionario ASC, pc.cliente_nome ASC
         `;
 
         const result = await request.query(sqlQuery);
         const records = result.recordset ?? [];
-        const total = records.length > 0 ? Number(records[0].total_count) : 0;
-        const rows = records.map(({ total_count, ...row }) => row);
+        const total = records.length > 0 ? Number(records[0].total_pessoas) : 0;
+
+        const pct = (num: number, den: number): number =>
+          den > 0 ? Math.round((num / den) * 10000) / 100 : 0;
+
+        const byPessoa = new Map<string, {
+          id_funcionario: number;
+          nome_colaborador: string | null;
+          base_nome: string;
+          total_escalas: number;
+          total_aceites: number;
+          total_presencas: number;
+          pct_aceite: number;
+          pct_presenca: number;
+          clientes: Array<Record<string, unknown>>;
+        }>();
+
+        for (const r of records) {
+          const key = `${r.id_filial}::${r.id_funcionario}`;
+          let pessoa = byPessoa.get(key);
+          if (!pessoa) {
+            const escalas = Number(r.pessoa_total_escalas);
+            const aceites = Number(r.pessoa_total_aceites);
+            const presencas = Number(r.pessoa_total_presencas);
+            pessoa = {
+              id_funcionario: r.id_funcionario,
+              nome_colaborador: r.nome_colaborador,
+              base_nome: r.base_nome,
+              total_escalas: escalas,
+              total_aceites: aceites,
+              total_presencas: presencas,
+              pct_aceite: pct(aceites, escalas),
+              pct_presenca: pct(presencas, aceites),
+              clientes: []
+            };
+            byPessoa.set(key, pessoa);
+          }
+          const cEscalas = Number(r.cliente_total_escalas);
+          const cAceites = Number(r.cliente_total_aceites);
+          const cPresencas = Number(r.cliente_total_presencas);
+          pessoa.clientes.push({
+            id_cliente: r.id_cliente,
+            cliente_nome: r.cliente_nome,
+            total_escalas: cEscalas,
+            total_aceites: cAceites,
+            total_presencas: cPresencas,
+            pct_aceite: pct(cAceites, cEscalas),
+            pct_presenca: pct(cPresencas, cAceites)
+          });
+        }
+
+        const rows = Array.from(byPessoa.values());
         return { rows, pagination: buildPaginationMeta(page, pageSize, total) };
       } catch (err) {
         console.error(err);
